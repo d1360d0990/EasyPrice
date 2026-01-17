@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.constraintlayout.widget.ConstraintLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/purple_dark">
+
+    <!-- Logo -->
+    <ImageView
+        android:id="@+id/imgLogo"
+        android:layout_width="260dp"
+        android:layout_height="260dp"
+        android:src="@drawable/logo_easy_price"
+        android:scaleType="fitCenter"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        android:layout_marginTop="40dp"/>
+
+    <!-- Botón Escanear -->
+
+    <!-- Botón Inicio -->
+
+    <Button
+        android:id="@+id/btnScan"
+        android:layout_width="0dp"
+        android:layout_height="60dp"
+        android:layout_margin="32dp"
+        android:layout_marginTop="212dp"
+        android:background="@drawable/btn_yellow"
+        android:drawableStart="@drawable/ic_camera"
+        android:drawablePadding="12dp"
+        android:text="Escanear Código"
+        android:textColor="@color/black"
+        android:textStyle="bold"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/imgLogo" />
+
+    <Button
+        android:id="@+id/btnInicio"
+        android:layout_width="0dp"
+        android:layout_height="80dp"
+        android:text="Inicio"
+        android:textStyle="bold"
+        android:background="@drawable/btn_yellow"
+        android:drawableTop="@drawable/ic_home"
+        android:drawablePadding="6dp"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toStartOf="@id/btnHistorial"
+        android:layout_margin="24dp"/>
+
+    <!-- Botón Historial -->
+    <Button
+        android:id="@+id/btnHistorial"
+        android:layout_width="0dp"
+        android:layout_height="80dp"
+        android:text="Historial"
+        android:textStyle="bold"
+        android:background="@drawable/btn_yellow"
+        android:drawableTop="@drawable/ic_list"
+        android:drawablePadding="6dp"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintStart_toEndOf="@id/btnInicio"
+        app:layout_constraintEnd_toEndOf="parent"
+        android:layout_margin="24dp"/>
+
+</androidx.constraintlayout.widget.ConstraintLayout>
