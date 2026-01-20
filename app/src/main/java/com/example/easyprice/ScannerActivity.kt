@@ -97,6 +97,7 @@ fun ScannerScreen(onCancel: () -> Unit) {
 
     var flashOn by remember { mutableStateOf(false) }
     var camera: Camera? by remember { mutableStateOf(null) }
+    var isScanning by remember { mutableStateOf(true) }
 
     Box(modifier = Modifier.fillMaxSize()) {
 
@@ -121,6 +122,11 @@ fun ScannerScreen(onCancel: () -> Unit) {
                     val scanner = BarcodeScanning.getClient()
 
                     analyzer.setAnalyzer(ContextCompat.getMainExecutor(ctx)) { imageProxy ->
+                        if (!isScanning) {
+                            imageProxy.close()
+                            return@setAnalyzer
+                        }
+
                         val mediaImage = imageProxy.image
                         if (mediaImage != null) {
                             val image = InputImage.fromMediaImage(
@@ -131,13 +137,13 @@ fun ScannerScreen(onCancel: () -> Unit) {
                             scanner.process(image)
                                 .addOnSuccessListener { barcodes ->
                                     barcodes.firstOrNull()?.rawValue?.let { result ->
-                                        val intent = Intent()
-                                        intent.putExtra("barcode_result", result)
-                                        (context as ComponentActivity).setResult(
-                                            Activity.RESULT_OK,
-                                            intent
-                                        )
-                                        (context as ComponentActivity).finish()
+                                        if (isScanning) {
+                                            isScanning = false
+                                            val intent = Intent(context, Result::class.java)
+                                            intent.putExtra("barcode", result)
+                                            context.startActivity(intent)
+                                            (context as? Activity)?.finish()
+                                        }
                                     }
                                 }
                                 .addOnCompleteListener {

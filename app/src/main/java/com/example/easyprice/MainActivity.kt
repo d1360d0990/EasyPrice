@@ -50,7 +50,6 @@ fun MainScreen() {
                 val data = result.data
                 val barcode = data?.getStringExtra("barcode_result")
                 Toast.makeText(context, "Código escaneado: $barcode", Toast.LENGTH_LONG).show()
-                // Aquí puedes usar el valor de 'barcode'
             }
         }
     )
@@ -63,7 +62,7 @@ fun MainScreen() {
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
 
-        Spacer(modifier = Modifier.height(32.dp))
+        Spacer(modifier = Modifier.height(40.dp))
 
         Image(
             painter = painterResource(id = R.drawable.logo_easy_price),
@@ -71,8 +70,9 @@ fun MainScreen() {
             modifier = Modifier.size(260.dp)
         )
 
-        Spacer(modifier = Modifier.height(32.dp))
+        Spacer(modifier = Modifier.height(40.dp))
 
+        // Botón principal de escaneo
         Button(
             onClick = {
                 val intent = Intent(context, ScannerActivity::class.java)
@@ -80,18 +80,19 @@ fun MainScreen() {
             },
             modifier = Modifier
                 .fillMaxWidth()
-                .height(60.dp),
+                .height(80.dp),
             colors = ButtonDefaults.buttonColors(
                 containerColor = Color(0xFFF4C430)
             ),
-            shape = RoundedCornerShape(20.dp)
+            shape = RoundedCornerShape(100.dp)
         ) {
             Icon(
                 painter = painterResource(id = R.drawable.ic_camera),
                 contentDescription = "Escanear",
-                tint = Color.Black
+                tint = Color.Black,
+                modifier = Modifier.size(40.dp)
             )
-            Spacer(modifier = Modifier.width(12.dp))
+            Spacer(modifier = Modifier.width(16.dp))
             Text(
                 text = "Escanear Código",
                 color = Color.Black,
@@ -100,35 +101,36 @@ fun MainScreen() {
             )
         }
 
+        // Espacio para empujar los botones inferiores hacia abajo
         Spacer(modifier = Modifier.weight(1f))
 
+        // Fila para los botones de navegación inferiores
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween
+            horizontalArrangement = Arrangement.SpaceAround
         ) {
-
-            BottomButton(
-                text = "Inicio",
-                icon = R.drawable.ic_home,
-                onClick = { }
+            BottomNavButton(
+                text = "Historial",
+                iconRes = R.drawable.ic_list,
+                onClick = { /* ACCIÓN DESHABILITADA */ }
             )
 
-            BottomButton(
-                text = "Historial",
-                icon = R.drawable.ic_list,
-                onClick = { }
+            BottomNavButton(
+                text = "Favoritos",
+                iconRes = R.drawable.ic_star_outline,
+                onClick = { /* ACCIÓN DESHABILITADA */ }
             )
         }
+        Spacer(modifier = Modifier.height(16.dp))
     }
 }
 
 @Composable
-fun BottomButton(
+fun BottomNavButton(
     text: String,
-    icon: Int,
+    iconRes: Int,
     onClick: () -> Unit
 ) {
-
     Button(
         onClick = onClick,
         modifier = Modifier
@@ -137,17 +139,16 @@ fun BottomButton(
         colors = ButtonDefaults.buttonColors(
             containerColor = Color(0xFFF4C430)
         ),
-        shape = RoundedCornerShape(20.dp)
+        shape = RoundedCornerShape(25.dp) // Radio de esquina para los botones inferiores
     ) {
-
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-
             Icon(
-                painter = painterResource(id = icon),
+                painter = painterResource(id = iconRes),
                 contentDescription = text,
-                tint = Color.Black
+                tint = Color.Black,
+                modifier = Modifier.size(30.dp)
             )
-
+            Spacer(modifier = Modifier.height(4.dp))
             Text(
                 text = text,
                 color = Color.Black,
@@ -156,5 +157,3 @@ fun BottomButton(
         }
     }
 }
-
-

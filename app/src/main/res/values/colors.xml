@@ -9,4 +9,9 @@
     <color name="white">#FFFFFFFF</color>
     <color name="purple_dark">#2B0A57</color>
     <color name="yellow">#F4C430</color>
+    <color name="blue_dark">#1C3A60</color>
+    <color name="activity_background">#1E2A35</color>
+    <color name="favorite_button_color">#2EF2A3</color>
+    <color name="home_button_color">#5EF28B</color>
+    <color name="retry_button_color">#B8C4BE</color>
 </resources>
