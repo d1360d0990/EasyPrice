@@ -17,8 +17,11 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.EasyPrice">
-        
-        <!-- Las declaraciones de FavoritesActivity y History han sido eliminadas. -->
+
+        <!-- Se vuelve a añadir la declaración de FavoritesActivity -->
+        <activity
+            android:name=".FavoritesActivity"
+            android:exported="false" />
 
         <activity
             android:name=".ScannerActivity"

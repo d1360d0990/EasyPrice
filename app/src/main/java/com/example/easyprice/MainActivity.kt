@@ -23,6 +23,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.easyprice.data.FavoritesManager
 import com.example.easyprice.ui.theme.EasyPriceTheme
 
 class MainActivity : ComponentActivity() {
@@ -49,7 +50,10 @@ fun MainScreen() {
             if (result.resultCode == Activity.RESULT_OK) {
                 val data = result.data
                 val barcode = data?.getStringExtra("barcode_result")
-                Toast.makeText(context, "Código escaneado: $barcode", Toast.LENGTH_LONG).show()
+                val intent = Intent(context, Result::class.java).apply {
+                    putExtra("barcode", barcode)
+                }
+                context.startActivity(intent)
             }
         }
     )
@@ -57,7 +61,7 @@ fun MainScreen() {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFF2B0A57))
+            .background(Color(0xFF1E2A35))
             .padding(16.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
@@ -101,24 +105,33 @@ fun MainScreen() {
             )
         }
 
-        // Espacio para empujar los botones inferiores hacia abajo
         Spacer(modifier = Modifier.weight(1f))
 
-        // Fila para los botones de navegación inferiores
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceAround
         ) {
+            // Botón de Historial (actualmente deshabilitado)
             BottomNavButton(
                 text = "Historial",
                 iconRes = R.drawable.ic_list,
-                onClick = { /* ACCIÓN DESHABILITADA */ }
+                onClick = { 
+                    Toast.makeText(context, "Historial no disponible", Toast.LENGTH_SHORT).show()
+                }
             )
 
+            // Botón de Favoritos (AHORA CONECTADO)
             BottomNavButton(
                 text = "Favoritos",
                 iconRes = R.drawable.ic_star_outline,
-                onClick = { /* ACCIÓN DESHABILITADA */ }
+                onClick = { 
+                    if (FavoritesManager.favorites.isEmpty()) {
+                        Toast.makeText(context, "No se marcó ningún producto como favorito", Toast.LENGTH_SHORT).show()
+                    } else {
+                        val intent = Intent(context, FavoritesActivity::class.java)
+                        context.startActivity(intent)
+                    }
+                }
             )
         }
         Spacer(modifier = Modifier.height(16.dp))
@@ -139,7 +152,7 @@ fun BottomNavButton(
         colors = ButtonDefaults.buttonColors(
             containerColor = Color(0xFFF4C430)
         ),
-        shape = RoundedCornerShape(25.dp) // Radio de esquina para los botones inferiores
+        shape = RoundedCornerShape(25.dp)
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Icon(
