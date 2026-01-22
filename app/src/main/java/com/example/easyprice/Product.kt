@@ -11,7 +11,7 @@ data class Product(
     @PropertyName("nombre")
     var name: String = "",
     @PropertyName("precio")
-    var price: String = "",
+    var price: Int = 0,
     @PropertyName("descripción")
     var description: String = "",
     @PropertyName("codigo")

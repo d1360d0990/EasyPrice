@@ -54,8 +54,9 @@ class Result : ComponentActivity() {
                                     // Creamos una instancia del nuevo modelo Product para nuestra UI
                                     val newProduct = Product(
                                         name = firestoreProduct.name,
-                                        price = firestoreProduct.price.toIntOrNull() ?: 0
+                                        price = firestoreProduct.price
                                     )
+
                                     product = newProduct
                                 } else {
                                     productNotFound = true
