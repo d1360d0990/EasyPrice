@@ -1,8 +1,10 @@
 package com.example.easyprice.model
 
-// Se elimina el override de equals() y hashCode() para que Compose detecte los cambios de cantidad.
+// Se actualiza el modelo para incluir descripción y código
 data class Product(
     val name: String,
     val price: Int,
-    val quantity: Int = 1
+    val quantity: Int = 1,
+    val description: String = "",
+    val code: String = ""
 )

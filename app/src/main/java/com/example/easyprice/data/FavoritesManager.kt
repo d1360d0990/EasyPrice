@@ -22,7 +22,11 @@ object FavoritesManager {
     }
 
     fun remove(product: Product) {
-        favorites.remove(product)
+        // Buscamos el producto a eliminar por sus propiedades para asegurar que se encuentre
+        val productToRemove = favorites.find { it.name == product.name && it.price == product.price }
+        if (productToRemove != null) {
+            favorites.remove(productToRemove)
+        }
     }
 
     fun increaseQuantity(product: Product) {

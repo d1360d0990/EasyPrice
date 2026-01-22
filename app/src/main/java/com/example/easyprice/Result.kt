@@ -28,6 +28,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.easyprice.data.FavoritesManager
 import com.example.easyprice.data.HistoryManager
+// Importamos el modelo correcto de forma explícita para evitar ambigüedad
 import com.example.easyprice.model.Product
 import com.google.firebase.firestore.FirebaseFirestore
 
@@ -49,15 +50,18 @@ class Result : ComponentActivity() {
                             if (documents.isEmpty) {
                                 productNotFound = true
                             } else {
-                                // Usamos el modelo Product antiguo para leer desde Firestore
+                                // 1. Usamos el modelo Product antiguo (de com.example.easyprice) para leer desde Firestore
                                 val firestoreProduct = documents.documents[0].toObject(com.example.easyprice.Product::class.java)
                                 if (firestoreProduct != null) {
-                                    // Creamos una instancia del nuevo modelo Product para nuestra UI
+                                    // 2. Convertimos el objeto de Firestore al nuevo modelo (de com.example.easyprice.model)
                                     val newProduct = Product(
                                         name = firestoreProduct.name,
-                                        price = firestoreProduct.price
+                                        price = firestoreProduct.price,
+                                        description = firestoreProduct.descripcion,
+                                        code = firestoreProduct.codigo
                                     )
 
+                                    // 3. Ahora los tipos coinciden y no habrá error
                                     product = newProduct
                                     HistoryManager.historyList.add(newProduct)
                                 } else {
@@ -82,23 +86,58 @@ class Result : ComponentActivity() {
                         val intent = Intent(context, MainActivity::class.java)
                         startActivity(intent)
                         finish()
-                    },
-                    onAddToFavorites = {
-                        FavoritesManager.add(it)
-                        Toast.makeText(context, "Agregado a favoritos", Toast.LENGTH_SHORT).show()
-                    },
-                    onNavigateToFavorites = {
-                        val intent = Intent(context, FavoritesActivity::class.java)
-                        context.startActivity(intent)
-                    },
-                    onNavigateToHistory = {
-                        val intent = Intent(context, HistoryActivity::class.java)
-                        context.startActivity(intent)
                     }
                 )
             }
         }
     }
+}
+
+@Composable
+fun QuantityDialog(
+    product: Product,
+    onDismiss: () -> Unit,
+    onConfirm: (Product) -> Unit
+) {
+    var quantity by remember { mutableStateOf(1) }
+    val totalPrice = product.price * quantity
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(text = product.name) },
+        text = {
+            Column {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    IconButton(onClick = { if (quantity > 1) quantity-- }) {
+                        Icon(painter = painterResource(id = R.drawable.ic_remove), contentDescription = "Remove")
+                    }
+                    Text(text = quantity.toString(), fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                    IconButton(onClick = { quantity++ }) {
+                        Icon(painter = painterResource(id = R.drawable.ic_add), contentDescription = "Add")
+                    }
+                }
+                Spacer(modifier = Modifier.height(16.dp))
+                Text(text = "Precio total: $ $totalPrice", fontSize = 18.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
+            }
+        },
+        confirmButton = {
+            Button(onClick = {
+                val productWithQuantity = product.copy(quantity = quantity)
+                onConfirm(productWithQuantity)
+            }) {
+                Text("Confirmar")
+            }
+        },
+        dismissButton = {
+            Button(onClick = onDismiss) {
+                Text("Cancelar")
+            }
+        }
+    )
 }
 
 @Composable
@@ -115,12 +154,27 @@ fun InfoRow(label: String, value: String) {
 @Composable
 fun ResultScreen(
     product: Product,
-    onBack: () -> Unit,
-    onAddToFavorites: (Product) -> Unit,
-    onNavigateToFavorites: () -> Unit,
-    onNavigateToHistory: () -> Unit
+    onBack: () -> Unit
 ) {
-    val context = LocalContext.current // Se obtiene el contexto para la navegación
+    val context = LocalContext.current
+    var showQuantityDialog by remember { mutableStateOf(false) }
+    // Estado para saber si el producto está en favoritos
+    var isFavorite by remember { 
+        mutableStateOf(FavoritesManager.favorites.any { it.name == product.name && it.price == product.price })
+    }
+
+    if (showQuantityDialog) {
+        QuantityDialog(
+            product = product,
+            onDismiss = { showQuantityDialog = false },
+            onConfirm = {
+                FavoritesManager.add(it)
+                isFavorite = true
+                showQuantityDialog = false
+                Toast.makeText(context, "Agregado a favoritos", Toast.LENGTH_SHORT).show()
+            }
+        )
+    }
 
     Column(
         modifier = Modifier.fillMaxSize().background(colorResource(id = R.color.activity_background)).padding(16.dp),
@@ -145,34 +199,52 @@ fun ResultScreen(
                 Spacer(modifier = Modifier.height(16.dp))
 
                 InfoRow("Nombre:", product.name)
-                // Como price es Int, lo convertimos a String para mostrarlo
                 InfoRow("Precio:", "$ ${product.price}")
+                InfoRow("Descripción:", product.description)
+                InfoRow("Código:", product.code)
                 
                 Spacer(modifier = Modifier.height(24.dp))
 
-                // BOTÓN AGREGAR A FAVORITO
+                // El botón ahora cambia dinámicamente
                 Button(
-                    onClick = { onAddToFavorites(product) },
+                    onClick = { 
+                        if (isFavorite) {
+                            FavoritesManager.remove(product)
+                            isFavorite = false
+                            Toast.makeText(context, "Eliminado de favoritos", Toast.LENGTH_SHORT).show()
+                        } else {
+                            showQuantityDialog = true
+                        }
+                    },
                     modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2EF2A3)),
+                    colors = ButtonDefaults.buttonColors(
+                        // Cambiamos el color si es favorito
+                        containerColor = if (isFavorite) Color.Red else Color(0xFF2EF2A3)
+                    ),
                     shape = RoundedCornerShape(14.dp)
                 ) {
                     Icon(painter = painterResource(id = R.drawable.ic_star), contentDescription = "Favorito", tint = Color.Black)
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("Agregar a Favorito", color = Color.Black, fontWeight = FontWeight.Bold)
+                    // Cambiamos el texto si es favorito
+                    Text(if (isFavorite) "Quitar de Favoritos" else "Agregar a Favorito", color = Color.Black, fontWeight = FontWeight.Bold)
                 }
 
                 Spacer(modifier = Modifier.height(16.dp))
 
-                // NUEVOS BOTONES DE NAVEGACIÓN
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceEvenly
                 ) {
-                    IconButton(onClick = onNavigateToHistory) {
+                    IconButton(onClick = {
+                        val intent = Intent(context, HistoryActivity::class.java)
+                        context.startActivity(intent)
+                    }) {
                         Icon(painter = painterResource(id = R.drawable.ic_list), contentDescription = "Historial", modifier = Modifier.size(45.dp))
                     }
-                    IconButton(onClick = onNavigateToFavorites) {
+                    IconButton(onClick = {
+                        val intent = Intent(context, FavoritesActivity::class.java)
+                        context.startActivity(intent)
+                    }) {
                         Icon(painter = painterResource(id = R.drawable.ic_star), contentDescription = "Ver Favoritos", modifier = Modifier.size(45.dp))
                     }
                 }
