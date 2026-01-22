@@ -27,6 +27,10 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -36,6 +40,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.easyprice.data.FavoritesManager
 import com.example.easyprice.data.HistoryManager
 import com.example.easyprice.model.Product
 
@@ -120,6 +125,8 @@ fun HistoryScreen() {
 
 @Composable
 fun HistoryItem(product: Product) {
+    var isFavorite by remember { mutableStateOf(FavoritesManager.favorites.contains(product)) }
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -128,8 +135,19 @@ fun HistoryItem(product: Product) {
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
         Text(text = product.name, fontSize = 16.sp)
-        IconButton(onClick = { /* TODO: Handle favorite */ }) {
-            Icon(painter = painterResource(id = R.drawable.ic_star_outline), contentDescription = "Favorite", tint = Color.Gray)
+        IconButton(onClick = { 
+            if (isFavorite) {
+                FavoritesManager.remove(product)
+            } else {
+                FavoritesManager.add(product)
+            }
+            isFavorite = !isFavorite
+        }) {
+            Icon(
+                painter = painterResource(id = if (isFavorite) R.drawable.ic_star else R.drawable.ic_star_outline),
+                contentDescription = "Favorite",
+                tint = if (isFavorite) Color.Yellow else Color.Gray
+            )
         }
     }
 }
