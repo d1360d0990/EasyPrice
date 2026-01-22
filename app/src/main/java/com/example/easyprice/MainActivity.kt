@@ -117,7 +117,7 @@ fun MainScreen() {
                 text = "Historial",
                 iconRes = R.drawable.ic_list,
                 onClick = { 
-                    if (HistoryManager.hasScanned) {
+                    if (HistoryManager.historyList.isNotEmpty()) {
                         val intent = Intent(context, HistoryActivity::class.java)
                         context.startActivity(intent)
                     } else {

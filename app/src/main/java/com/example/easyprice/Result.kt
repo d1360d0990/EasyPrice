@@ -59,7 +59,7 @@ class Result : ComponentActivity() {
                                     )
 
                                     product = newProduct
-                                    HistoryManager.hasScanned = true
+                                    HistoryManager.historyList.add(newProduct)
                                 } else {
                                     productNotFound = true
                                 }
@@ -92,12 +92,8 @@ class Result : ComponentActivity() {
                         context.startActivity(intent)
                     },
                     onNavigateToHistory = {
-                        if (HistoryManager.hasScanned) {
-                            val intent = Intent(context, HistoryActivity::class.java)
-                            context.startActivity(intent)
-                        } else {
-                            Toast.makeText(context, "No se ha escaneado ningún producto aún", Toast.LENGTH_SHORT).show()
-                        }
+                        val intent = Intent(context, HistoryActivity::class.java)
+                        context.startActivity(intent)
                     }
                 )
             }

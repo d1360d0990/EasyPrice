@@ -1,5 +1,7 @@
 package com.example.easyprice.data
 
+import com.example.easyprice.model.Product
+
 object HistoryManager {
-    var hasScanned: Boolean = false
+    val historyList = mutableListOf<Product>()
 }
