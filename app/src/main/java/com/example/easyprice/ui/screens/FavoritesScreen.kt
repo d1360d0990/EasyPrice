@@ -2,9 +2,25 @@ package com.example.easyprice.ui.screens
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.*
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Divider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -13,13 +29,13 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.example.easyprice.R
 import com.example.easyprice.data.FavoritesManager
 import com.example.easyprice.model.Product
 
 @Composable
 fun FavoritesScreen(onBack: () -> Unit) {
-
     val favorites = FavoritesManager.favorites
     val total = FavoritesManager.total()
 
@@ -30,7 +46,6 @@ fun FavoritesScreen(onBack: () -> Unit) {
             .padding(16.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-
         Spacer(modifier = Modifier.height(20.dp))
 
         Image(
@@ -47,7 +62,6 @@ fun FavoritesScreen(onBack: () -> Unit) {
             colors = CardDefaults.cardColors(containerColor = Color.White)
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
-
                 Button(
                     onClick = {},
                     modifier = Modifier.fillMaxWidth(),
@@ -66,15 +80,12 @@ fun FavoritesScreen(onBack: () -> Unit) {
                 Spacer(modifier = Modifier.height(16.dp))
 
                 if (favorites.isEmpty()) {
-
                     Text(
                         text = "No se marcaron productos como favoritos aún, marca al menos un producto.",
                         textAlign = TextAlign.Center,
                         modifier = Modifier.fillMaxWidth()
                     )
-
                 } else {
-
                     favorites.forEach { product ->
                         FavoriteItem(product)
                         Divider()
@@ -86,8 +97,8 @@ fun FavoritesScreen(onBack: () -> Unit) {
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Text("Total", fontWeight = FontWeight.Bold)
-                        Text("$${total}", fontWeight = FontWeight.Bold)
+                        Text("Total", fontWeight = FontWeight.Bold, fontSize = 20.sp)
+                        Text("$${total}", fontWeight = FontWeight.Bold, fontSize = 20.sp)
                     }
                 }
             }
@@ -123,21 +134,27 @@ fun FavoriteItem(product: Product) {
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-
-        Column {
+        Column(modifier = Modifier.weight(1f)) {
             Text(product.name, fontWeight = FontWeight.Bold)
             Text("$${product.price}")
         }
 
-        IconButton(
-            onClick = {
-                FavoritesManager.remove(product)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = { 
+                FavoritesManager.decreaseQuantity(product)
+            }) {
+                Icon(painter = painterResource(id = R.drawable.ic_remove), contentDescription = "Remove")
             }
-        ) {
-            Icon(
-                painter = painterResource(id = R.drawable.ic_delete),
-                contentDescription = "Eliminar"
-            )
+            // Usamos directamente la cantidad del producto, sin estado local
+            Text(product.quantity.toString(), fontWeight = FontWeight.Bold, fontSize = 18.sp)
+            IconButton(onClick = { 
+                FavoritesManager.increaseQuantity(product)
+            }) {
+                Icon(painter = painterResource(id = R.drawable.ic_add), contentDescription = "Add")
+            }
+            IconButton(onClick = { FavoritesManager.remove(product) }) {
+                Icon(painter = painterResource(id = R.drawable.ic_delete), contentDescription = "Eliminar")
+            }
         }
     }
 }
