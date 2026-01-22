@@ -24,6 +24,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.easyprice.data.FavoritesManager
+import com.example.easyprice.data.HistoryManager
 import com.example.easyprice.ui.theme.EasyPriceTheme
 
 class MainActivity : ComponentActivity() {
@@ -116,7 +117,12 @@ fun MainScreen() {
                 text = "Historial",
                 iconRes = R.drawable.ic_list,
                 onClick = { 
-                    Toast.makeText(context, "Historial no disponible", Toast.LENGTH_SHORT).show()
+                    if (HistoryManager.hasScanned) {
+                        val intent = Intent(context, HistoryActivity::class.java)
+                        context.startActivity(intent)
+                    } else {
+                        Toast.makeText(context, "No se ha escaneado ningún producto aún", Toast.LENGTH_SHORT).show()
+                    }
                 }
             )
 

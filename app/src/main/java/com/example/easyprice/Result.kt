@@ -27,6 +27,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.easyprice.data.FavoritesManager
+import com.example.easyprice.data.HistoryManager
 import com.example.easyprice.model.Product
 import com.google.firebase.firestore.FirebaseFirestore
 
@@ -58,6 +59,7 @@ class Result : ComponentActivity() {
                                     )
 
                                     product = newProduct
+                                    HistoryManager.hasScanned = true
                                 } else {
                                     productNotFound = true
                                 }
@@ -88,6 +90,14 @@ class Result : ComponentActivity() {
                     onNavigateToFavorites = {
                         val intent = Intent(context, FavoritesActivity::class.java)
                         context.startActivity(intent)
+                    },
+                    onNavigateToHistory = {
+                        if (HistoryManager.hasScanned) {
+                            val intent = Intent(context, HistoryActivity::class.java)
+                            context.startActivity(intent)
+                        } else {
+                            Toast.makeText(context, "No se ha escaneado ningún producto aún", Toast.LENGTH_SHORT).show()
+                        }
                     }
                 )
             }
@@ -111,7 +121,8 @@ fun ResultScreen(
     product: Product,
     onBack: () -> Unit,
     onAddToFavorites: (Product) -> Unit,
-    onNavigateToFavorites: () -> Unit
+    onNavigateToFavorites: () -> Unit,
+    onNavigateToHistory: () -> Unit
 ) {
     val context = LocalContext.current // Se obtiene el contexto para la navegación
 
@@ -162,7 +173,7 @@ fun ResultScreen(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceEvenly
                 ) {
-                    IconButton(onClick = { Toast.makeText(context, "Historial no disponible", Toast.LENGTH_SHORT).show() }) {
+                    IconButton(onClick = onNavigateToHistory) {
                         Icon(painter = painterResource(id = R.drawable.ic_list), contentDescription = "Historial", modifier = Modifier.size(45.dp))
                     }
                     IconButton(onClick = onNavigateToFavorites) {

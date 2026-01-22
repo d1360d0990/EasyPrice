@@ -18,6 +18,10 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.EasyPrice">
 
+        <activity
+            android:name=".HistoryActivity"
+            android:exported="false" />
+
         <!-- Se vuelve a añadir la declaración de FavoritesActivity -->
         <activity
             android:name=".FavoritesActivity"
