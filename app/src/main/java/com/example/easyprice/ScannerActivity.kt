@@ -5,36 +5,27 @@ import android.annotation.SuppressLint
 import android.app.Activity
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.media.MediaPlayer
 import android.os.Bundle
 import android.util.Log
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.camera.core.Camera
-import androidx.camera.core.CameraSelector
-import androidx.camera.core.ImageAnalysis
-import androidx.camera.core.Preview
+import androidx.camera.core.*
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Text
+import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
@@ -51,40 +42,21 @@ class ScannerActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        if (allPermissionsGranted()) {
+        if (ContextCompat.checkSelfPermission(
+                this,
+                Manifest.permission.CAMERA
+            ) == PackageManager.PERMISSION_GRANTED
+        ) {
             setContent {
                 ScannerScreen(onCancel = { finish() })
             }
         } else {
             ActivityCompat.requestPermissions(
-                this, REQUIRED_PERMISSIONS, REQUEST_CODE_PERMISSIONS
+                this,
+                arrayOf(Manifest.permission.CAMERA),
+                10
             )
         }
-    }
-
-    private fun allPermissionsGranted() = REQUIRED_PERMISSIONS.all {
-        ContextCompat.checkSelfPermission(baseContext, it) == PackageManager.PERMISSION_GRANTED
-    }
-
-    override fun onRequestPermissionsResult(
-        requestCode: Int, permissions: Array<String>, grantResults: IntArray
-    ) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == REQUEST_CODE_PERMISSIONS) {
-            if (allPermissionsGranted()) {
-                setContent {
-                    ScannerScreen(onCancel = { finish() })
-                }
-            } else {
-                Toast.makeText(this, "Permissions not granted by the user.", Toast.LENGTH_SHORT).show()
-                finish()
-            }
-        }
-    }
-
-    companion object {
-        private const val REQUEST_CODE_PERMISSIONS = 10
-        private val REQUIRED_PERMISSIONS = arrayOf(Manifest.permission.CAMERA)
     }
 }
 
@@ -95,13 +67,37 @@ fun ScannerScreen(onCancel: () -> Unit) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
 
-    var flashOn by remember { mutableStateOf(false) }
     var camera: Camera? by remember { mutableStateOf(null) }
+    var flashOn by remember { mutableStateOf(false) }
     var isScanning by remember { mutableStateOf(true) }
+
+    val mediaPlayer = remember { MediaPlayer.create(context, R.raw.beep) }
+
+    val scannerSize = 260.dp
+    val laserHeight = 6.dp // más alto para el glow
+
+    /* 🔴 ANIMACIÓN DEL LÁSER */
+    val infiniteTransition = rememberInfiniteTransition(label = "laser")
+
+    val laserProgress by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(
+                durationMillis = 1600,
+                easing = LinearEasing
+            ),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "laser_progress"
+    )
+
+    val laserMaxOffset = scannerSize - laserHeight
+    val laserY = laserMaxOffset * laserProgress
 
     Box(modifier = Modifier.fillMaxSize()) {
 
-        // 📷 Camera
+        /* 📷 CÁMARA */
         AndroidView(
             modifier = Modifier.fillMaxSize(),
             factory = { ctx ->
@@ -121,7 +117,10 @@ fun ScannerScreen(onCancel: () -> Unit) {
 
                     val scanner = BarcodeScanning.getClient()
 
-                    analyzer.setAnalyzer(ContextCompat.getMainExecutor(ctx)) { imageProxy ->
+                    analyzer.setAnalyzer(
+                        ContextCompat.getMainExecutor(ctx)
+                    ) { imageProxy ->
+
                         if (!isScanning) {
                             imageProxy.close()
                             return@setAnalyzer
@@ -139,6 +138,8 @@ fun ScannerScreen(onCancel: () -> Unit) {
                                     barcodes.firstOrNull()?.rawValue?.let { result ->
                                         if (isScanning) {
                                             isScanning = false
+                                            mediaPlayer.start()
+
                                             val intent = Intent(context, Result::class.java)
                                             intent.putExtra("barcode", result)
                                             context.startActivity(intent)
@@ -152,18 +153,16 @@ fun ScannerScreen(onCancel: () -> Unit) {
                         }
                     }
 
-                    val selector = CameraSelector.DEFAULT_BACK_CAMERA
-
                     try {
                         cameraProvider.unbindAll()
                         camera = cameraProvider.bindToLifecycle(
                             lifecycleOwner,
-                            selector,
+                            CameraSelector.DEFAULT_BACK_CAMERA,
                             preview,
                             analyzer
                         )
                     } catch (e: Exception) {
-                        Log.e("ScannerScreen", "Use case binding failed", e)
+                        Log.e("Scanner", "Camera error", e)
                     }
 
                 }, ContextCompat.getMainExecutor(ctx))
@@ -172,22 +171,41 @@ fun ScannerScreen(onCancel: () -> Unit) {
             }
         )
 
-        // 🔵 Overlay oscuro
+        /* 🔲 OVERLAY OSCURO */
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color(0xAA1F2A36))
+                .background(Color(0xAA000000))
         )
 
-        // 🟡 Marco escaneo
+        /* 🟡 MARCO DE ESCANEO */
         Box(
             modifier = Modifier
-                .size(260.dp)
+                .size(scannerSize)
                 .align(Alignment.Center)
                 .border(3.dp, Color.Yellow, RoundedCornerShape(12.dp))
-        )
+                .clipToBounds()
+        ) {
 
-        // 🔰 Logo arriba
+            /* 🔥 LÁSER CON EFECTO GLOW */
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(laserHeight)
+                    .offset(y = laserY)
+                    .background(
+                        Brush.verticalGradient(
+                            colors = listOf(
+                                Color.Transparent,
+                                Color.Red,
+                                Color.Transparent
+                            )
+                        )
+                    )
+            )
+        }
+
+        /* 🔰 LOGO */
         Image(
             painter = painterResource(id = R.drawable.logo_easy_price),
             contentDescription = "Logo",
@@ -197,7 +215,7 @@ fun ScannerScreen(onCancel: () -> Unit) {
                 .padding(top = 32.dp)
         )
 
-        // 🔘 Botones inferiores
+        /* 🔘 BOTONES */
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -208,11 +226,12 @@ fun ScannerScreen(onCancel: () -> Unit) {
 
             Button(
                 onClick = onCancel,
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF4C430)),
-                shape = RoundedCornerShape(20.dp),
                 modifier = Modifier
                     .width(150.dp)
-                    .height(60.dp)
+                    .height(60.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFFF4C430)
+                )
             ) {
                 Text("Cancelar", color = Color.Black)
             }
@@ -222,11 +241,12 @@ fun ScannerScreen(onCancel: () -> Unit) {
                     flashOn = !flashOn
                     camera?.cameraControl?.enableTorch(flashOn)
                 },
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF4C430)),
-                shape = RoundedCornerShape(20.dp),
                 modifier = Modifier
                     .width(150.dp)
-                    .height(60.dp)
+                    .height(60.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFFF4C430)
+                )
             ) {
                 Text("Flash", color = Color.Black)
             }
