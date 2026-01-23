@@ -34,8 +34,8 @@ class NotFound : ComponentActivity() {
         super.onCreate(savedInstanceState)
         setContent {
             NotFoundScreen(
-                onHome = { 
-                    val intent = Intent(this, Inicio::class.java)
+                onRescan = { 
+                    val intent = Intent(this, ScannerActivity::class.java)
                     startActivity(intent)
                     finish() 
                 }
@@ -46,7 +46,7 @@ class NotFound : ComponentActivity() {
 
 @Composable
 fun NotFoundScreen(
-    onHome: () -> Unit
+    onRescan: () -> Unit
 ) {
     Column(
         modifier = Modifier
@@ -109,9 +109,9 @@ fun NotFoundScreen(
 
         Spacer(modifier = Modifier.weight(1f))
 
-        // BOTÓN VOLVER AL INICIO
+        // BOTÓN VOLVER A ESCANEAR
         Button(
-            onClick = onHome,
+            onClick = onRescan,
             modifier = Modifier
                 .fillMaxWidth()
                 .height(55.dp),
@@ -121,7 +121,7 @@ fun NotFoundScreen(
             shape = RoundedCornerShape(16.dp)
         ) {
             Text(
-                text = "Volver al Inicio",
+                text = "Volver a Escanear",
                 color = colorResource(id = R.color.black),
                 fontWeight = FontWeight.Bold
             )

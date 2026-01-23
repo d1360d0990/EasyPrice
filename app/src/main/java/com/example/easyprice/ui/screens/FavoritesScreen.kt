@@ -117,7 +117,7 @@ fun FavoritesScreen(onBack: () -> Unit) {
             shape = RoundedCornerShape(16.dp)
         ) {
             Text(
-                text = "Volver al Inicio",
+                text = "Volver atrás",
                 color = Color.Black,
                 fontWeight = FontWeight.Bold
             )
