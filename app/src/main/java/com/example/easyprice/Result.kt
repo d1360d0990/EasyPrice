@@ -64,7 +64,13 @@ class Result : ComponentActivity() {
 
                                     // 3. Ahora los tipos coinciden y no habrá error
                                     product = newProduct
-                                    HistoryManager.historyList.add(newProduct)
+                                    // Añadimos al historial. Si ya existe, se reemplaza.
+                                    val existingIndex = HistoryManager.historyList.indexOfFirst { it.code == newProduct.code }
+                                    if (existingIndex != -1) {
+                                        HistoryManager.historyList[existingIndex] = newProduct
+                                    } else {
+                                        HistoryManager.historyList.add(newProduct)
+                                    }
                                 } else {
                                     productNotFound = true
                                 }
@@ -159,10 +165,10 @@ fun ResultScreen(
 ) {
     val context = LocalContext.current
     var showQuantityDialog by remember { mutableStateOf(false) }
-    // Estado para saber si el producto está en favoritos
-    var isFavorite by remember { 
-        mutableStateOf(FavoritesManager.favorites.any { it.name == product.name && it.price == product.price })
-    }
+    
+    // CORRECTO: El estado se deriva directamente del "source of truth" (FavoritesManager)
+    // en cada recomposición, por lo que nunca será obsoleto.
+    val isFavorite = FavoritesManager.favorites.any { it.name == product.name && it.price == product.price }
 
     if (showQuantityDialog) {
         QuantityDialog(
@@ -170,9 +176,14 @@ fun ResultScreen(
             onDismiss = { showQuantityDialog = false },
             onConfirm = {
                 FavoritesManager.add(it)
-                isFavorite = true
                 showQuantityDialog = false
                 Toast.makeText(context, "Agregado a favoritos", Toast.LENGTH_SHORT).show()
+
+                // Actualizamos el historial con la cantidad seleccionada
+                val existingIndex = HistoryManager.historyList.indexOfFirst { item -> item.code == it.code }
+                if (existingIndex != -1) {
+                    HistoryManager.historyList[existingIndex] = it
+                }
             }
         )
     }
@@ -206,12 +217,11 @@ fun ResultScreen(
                 
                 Spacer(modifier = Modifier.height(24.dp))
 
-                // El botón ahora cambia dinámicamente
+                // El botón ahora reacciona a los cambios en isFavorite
                 Button(
                     onClick = { 
                         if (isFavorite) {
                             FavoritesManager.remove(product)
-                            isFavorite = false
                             Toast.makeText(context, "Eliminado de favoritos", Toast.LENGTH_SHORT).show()
                         } else {
                             showQuantityDialog = true
@@ -219,14 +229,12 @@ fun ResultScreen(
                     },
                     modifier = Modifier.fillMaxWidth(),
                     colors = ButtonDefaults.buttonColors(
-                        // Cambiamos el color si es favorito
                         containerColor = if (isFavorite) Color.Red else Color(0xFF2EF2A3)
                     ),
                     shape = RoundedCornerShape(14.dp)
                 ) {
                     Icon(painter = painterResource(id = R.drawable.ic_star), contentDescription = "Favorito", tint = Color.Black)
                     Spacer(modifier = Modifier.width(8.dp))
-                    // Cambiamos el texto si es favorito
                     Text(if (isFavorite) "Quitar de Favoritos" else "Agregar a Favorito", color = Color.Black, fontWeight = FontWeight.Bold)
                 }
 
