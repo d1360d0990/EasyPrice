@@ -8,6 +8,7 @@ import androidx.activity.compose.setContent
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
@@ -231,21 +232,46 @@ fun ResultScreen(
 
                 Spacer(modifier = Modifier.height(16.dp))
 
+                // NUEVOS BOTONES DE NAVEGACIÓN
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceEvenly
+                    horizontalArrangement = Arrangement.SpaceEvenly,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    IconButton(onClick = {
-                        val intent = Intent(context, HistoryActivity::class.java)
-                        context.startActivity(intent)
-                    }) {
-                        Icon(painter = painterResource(id = R.drawable.ic_list), contentDescription = "Historial", modifier = Modifier.size(45.dp))
+                    // History Button
+                    Button(
+                        onClick = {
+                            val intent = Intent(context, HistoryActivity::class.java)
+                            context.startActivity(intent)
+                        },
+                        shape = CircleShape,
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF4C430)),
+                        modifier = Modifier.size(60.dp),
+                        contentPadding = PaddingValues(0.dp)
+                    ) {
+                        Icon(
+                            painter = painterResource(id = R.drawable.ic_list),
+                            contentDescription = "Historial",
+                            tint = Color.Black
+                        )
                     }
-                    IconButton(onClick = {
-                        val intent = Intent(context, FavoritesActivity::class.java)
-                        context.startActivity(intent)
-                    }) {
-                        Icon(painter = painterResource(id = R.drawable.ic_star), contentDescription = "Ver Favoritos", modifier = Modifier.size(45.dp))
+
+                    // Favorites Button
+                    Button(
+                        onClick = {
+                            val intent = Intent(context, FavoritesActivity::class.java)
+                            context.startActivity(intent)
+                        },
+                        shape = CircleShape,
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF4C430)),
+                        modifier = Modifier.size(60.dp),
+                        contentPadding = PaddingValues(0.dp)
+                    ) {
+                        Icon(
+                            painter = painterResource(id = R.drawable.ic_star_outline),
+                            contentDescription = "Ver Favoritos",
+                            tint = Color.Black
+                        )
                     }
                 }
             }
