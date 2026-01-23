@@ -6,6 +6,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -56,14 +57,6 @@ class HistoryActivity : ComponentActivity() {
 @Composable
 fun HistoryScreen() {
     val context = LocalContext.current
-
-    // Dummy data for preview
-    if (HistoryManager.historyList.isEmpty()) {
-        HistoryManager.historyList.add(Product("Auriculares Bluetooth", 2500))
-        HistoryManager.historyList.add(Product("Café \"La morenita\" x 50", 850))
-        HistoryManager.historyList.add(Product("Tallarines \"Marolio\"", 350))
-        HistoryManager.historyList.add(Product("Café \"La morenita\" x 50", 850))
-    }
 
     Column(
         modifier = Modifier
@@ -125,11 +118,18 @@ fun HistoryScreen() {
 
 @Composable
 fun HistoryItem(product: Product) {
+    val context = LocalContext.current
     var isFavorite by remember { mutableStateOf(FavoritesManager.favorites.contains(product)) }
 
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .clickable { // <-- Se hace clicable el elemento
+                val intent = Intent(context, Result::class.java).apply {
+                    putExtra("barcode", product.code) // <-- Se pasa el código de barras
+                }
+                context.startActivity(intent)
+            }
             .padding(vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween

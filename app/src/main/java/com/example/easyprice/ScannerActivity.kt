@@ -70,6 +70,8 @@ fun ScannerScreen(onCancel: () -> Unit) {
     var camera: Camera? by remember { mutableStateOf(null) }
     var flashOn by remember { mutableStateOf(false) }
     var isScanning by remember { mutableStateOf(true) }
+    var isCameraReady by remember { mutableStateOf(false) }
+    var isLoadingResult by remember { mutableStateOf(false) }
 
     val mediaPlayer = remember { MediaPlayer.create(context, R.raw.beep) }
 
@@ -138,6 +140,7 @@ fun ScannerScreen(onCancel: () -> Unit) {
                                     barcodes.firstOrNull()?.rawValue?.let { result ->
                                         if (isScanning) {
                                             isScanning = false
+                                            isLoadingResult = true
                                             mediaPlayer.start()
 
                                             val intent = Intent(context, Result::class.java)
@@ -161,6 +164,7 @@ fun ScannerScreen(onCancel: () -> Unit) {
                             preview,
                             analyzer
                         )
+                        isCameraReady = true
                     } catch (e: Exception) {
                         Log.e("Scanner", "Camera error", e)
                     }
@@ -171,38 +175,40 @@ fun ScannerScreen(onCancel: () -> Unit) {
             }
         )
 
-        /* 🔲 OVERLAY OSCURO */
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(Color(0xAA000000))
-        )
-
-        /* 🟡 MARCO DE ESCANEO */
-        Box(
-            modifier = Modifier
-                .size(scannerSize)
-                .align(Alignment.Center)
-                .border(3.dp, Color.Yellow, RoundedCornerShape(12.dp))
-                .clipToBounds()
-        ) {
-
-            /* 🔥 LÁSER CON EFECTO GLOW */
+        if (isCameraReady) {
+            /* 🔲 OVERLAY OSCURO */
             Box(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .height(laserHeight)
-                    .offset(y = laserY)
-                    .background(
-                        Brush.verticalGradient(
-                            colors = listOf(
-                                Color.Transparent,
-                                Color.Red,
-                                Color.Transparent
+                    .fillMaxSize()
+                    .background(Color(0xAA000000))
+            )
+
+            /* 🟡 MARCO DE ESCANEO */
+            Box(
+                modifier = Modifier
+                    .size(scannerSize)
+                    .align(Alignment.Center)
+                    .border(3.dp, Color.Yellow, RoundedCornerShape(12.dp))
+                    .clipToBounds()
+            ) {
+
+                /* 🔥 LÁSER CON EFECTO GLOW */
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(laserHeight)
+                        .offset(y = laserY)
+                        .background(
+                            Brush.verticalGradient(
+                                colors = listOf(
+                                    Color.Transparent,
+                                    Color.Red,
+                                    Color.Transparent
+                                )
                             )
                         )
-                    )
-            )
+                )
+            }
         }
 
         /* 🔰 LOGO */
@@ -249,6 +255,31 @@ fun ScannerScreen(onCancel: () -> Unit) {
                 )
             ) {
                 Text("Flash", color = Color.Black)
+            }
+        }
+
+        // Indicadores de progreso
+        if (!isCameraReady) {
+            Box(
+                modifier = Modifier.fillMaxSize().background(Color(0xFF1E2A35)),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    CircularProgressIndicator(color = Color.Yellow)
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text("Iniciando cámara...", color = Color.White)
+                }
+            }
+        } else if (isLoadingResult) {
+            Box(
+                modifier = Modifier.fillMaxSize().background(Color(0xAA000000)),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    CircularProgressIndicator(color = Color.Yellow)
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text("Procesando...", color = Color.White)
+                }
             }
         }
     }
