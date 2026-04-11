@@ -8,7 +8,6 @@ import android.content.pm.PackageManager
 import android.media.MediaPlayer
 import android.os.Bundle
 import android.util.Log
-import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.camera.core.*
@@ -76,9 +75,8 @@ fun ScannerScreen(onCancel: () -> Unit) {
     val mediaPlayer = remember { MediaPlayer.create(context, R.raw.beep) }
 
     val scannerSize = 260.dp
-    val laserHeight = 6.dp // más alto para el glow
+    val laserHeight = 6.dp
 
-    /* 🔴 ANIMACIÓN DEL LÁSER */
     val infiniteTransition = rememberInfiniteTransition(label = "laser")
 
     val laserProgress by infiniteTransition.animateFloat(
@@ -99,7 +97,6 @@ fun ScannerScreen(onCancel: () -> Unit) {
 
     Box(modifier = Modifier.fillMaxSize()) {
 
-        /* 📷 CÁMARA */
         AndroidView(
             modifier = Modifier.fillMaxSize(),
             factory = { ctx ->
@@ -143,9 +140,11 @@ fun ScannerScreen(onCancel: () -> Unit) {
                                             isLoadingResult = true
                                             mediaPlayer.start()
 
-                                            val intent = Intent(context, Result::class.java)
-                                            intent.putExtra("barcode", result)
-                                            context.startActivity(intent)
+                                            // MODIFICACIÓN: Devolver el resultado a la actividad llamadora
+                                            val returnIntent = Intent().apply {
+                                                putExtra("barcode_result", result)
+                                            }
+                                            (context as? Activity)?.setResult(Activity.RESULT_OK, returnIntent)
                                             (context as? Activity)?.finish()
                                         }
                                     }
@@ -176,14 +175,12 @@ fun ScannerScreen(onCancel: () -> Unit) {
         )
 
         if (isCameraReady) {
-            /* 🔲 OVERLAY OSCURO */
             Box(
                 modifier = Modifier
                     .fillMaxSize()
                     .background(Color(0xAA000000))
             )
 
-            /* 🟡 MARCO DE ESCANEO */
             Box(
                 modifier = Modifier
                     .size(scannerSize)
@@ -191,8 +188,6 @@ fun ScannerScreen(onCancel: () -> Unit) {
                     .border(3.dp, Color.Yellow, RoundedCornerShape(12.dp))
                     .clipToBounds()
             ) {
-
-                /* 🔥 LÁSER CON EFECTO GLOW */
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -211,7 +206,6 @@ fun ScannerScreen(onCancel: () -> Unit) {
             }
         }
 
-        /* 🔰 LOGO */
         Image(
             painter = painterResource(id = R.drawable.logo_easy_price),
             contentDescription = "Logo",
@@ -221,7 +215,6 @@ fun ScannerScreen(onCancel: () -> Unit) {
                 .padding(top = 32.dp)
         )
 
-        /* 🔘 BOTONES */
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -258,7 +251,6 @@ fun ScannerScreen(onCancel: () -> Unit) {
             }
         }
 
-        // Indicadores de progreso
         if (!isCameraReady) {
             Box(
                 modifier = Modifier.fillMaxSize().background(Color(0xFF1E2A35)),

@@ -20,9 +20,8 @@ object FavoritesManager {
         return favoritesList.toList()
     }
 
-    // 2. SIMPLIFICAR LA LÓGICA DE SUMA
-    fun getFavoritesTotal(): Int {
-        // Como price ahora es un Int, la suma es directa. No se necesitan conversiones.
+    // Se actualiza a Double para coincidir con el modelo de Producto
+    fun getFavoritesTotal(): Double {
         return favoritesList.sumOf { it.price }
     }
     

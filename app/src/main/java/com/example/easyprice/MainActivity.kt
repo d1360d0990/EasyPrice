@@ -10,11 +10,20 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Done
+import androidx.compose.material.icons.filled.Face
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.ShoppingCart
@@ -30,11 +39,13 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.easyprice.data.FavoritesManager
 import com.example.easyprice.data.HistoryManager
 import com.example.easyprice.ui.theme.EasyPriceTheme
+import com.google.firebase.firestore.FirebaseFirestore
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -42,6 +53,28 @@ class MainActivity : ComponentActivity() {
         setContent {
             EasyPriceTheme {
                 var currentScreen by remember { mutableStateOf("role_selection") }
+                var scannedBarcode by remember { mutableStateOf("") }
+
+                val context = LocalContext.current
+                val barcodeLauncher = rememberLauncherForActivityResult(
+                    contract = ActivityResultContracts.StartActivityForResult(),
+                    onResult = { result ->
+                        if (result.resultCode == Activity.RESULT_OK) {
+                            val barcode = result.data?.getStringExtra("barcode_result")?.trim() ?: ""
+                            scannedBarcode = barcode
+                            
+                            val db = FirebaseFirestore.getInstance()
+                            db.collection("products").whereEqualTo("codigo", barcode).get()
+                                .addOnSuccessListener { documents ->
+                                    if (documents.isEmpty) {
+                                        currentScreen = "admin_add_product"
+                                    } else {
+                                        currentScreen = "admin_product_exists"
+                                    }
+                                }
+                        }
+                    }
+                )
 
                 when (currentScreen) {
                     "role_selection" -> {
@@ -64,7 +97,39 @@ class MainActivity : ComponentActivity() {
                     }
                     "admin_home" -> {
                         AdminHomeScreen(
+                            onAdminScan = {
+                                val intent = Intent(this, ScannerActivity::class.java)
+                                barcodeLauncher.launch(intent)
+                            },
                             onLogout = { currentScreen = "role_selection" }
+                        )
+                    }
+                    "admin_product_exists" -> {
+                        ProductExistsScreen(
+                            onViewProduct = {
+                                val intent = Intent(this, Result::class.java).apply {
+                                    putExtra("barcode", scannedBarcode)
+                                }
+                                startActivity(intent)
+                            },
+                            onBackToAdminHome = { currentScreen = "admin_home" }
+                        )
+                    }
+                    "admin_add_product" -> {
+                        AddProductScreen(
+                            barcode = scannedBarcode,
+                            onProductLoaded = { currentScreen = "admin_success" },
+                            onCancel = { currentScreen = "admin_home" },
+                            onBackToAdminHome = { currentScreen = "admin_home" }
+                        )
+                    }
+                    "admin_success" -> {
+                        SuccessScreen(
+                            onCargarOtro = {
+                                val intent = Intent(this, ScannerActivity::class.java)
+                                barcodeLauncher.launch(intent)
+                            },
+                            onBackToAdminHome = { currentScreen = "admin_home" }
                         )
                     }
                     "consumer_home" -> {
@@ -73,6 +138,316 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+}
+
+@Composable
+fun SuccessScreen(onCargarOtro: () -> Unit, onBackToAdminHome: () -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xFF1E2A35))
+            .padding(24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Image(
+            painter = painterResource(id = R.drawable.logo_easy_price),
+            contentDescription = "Logo",
+            modifier = Modifier.size(200.dp).padding(bottom = 32.dp),
+            contentScale = ContentScale.Fit
+        )
+
+        Card(
+            modifier = Modifier.fillMaxWidth().height(380.dp),
+            shape = RoundedCornerShape(32.dp),
+            colors = CardDefaults.cardColors(containerColor = Color.White),
+            elevation = CardDefaults.cardElevation(8.dp)
+        ) {
+            Column(
+                modifier = Modifier.fillMaxSize().padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                Text(
+                    "Producto cargado exitosamente",
+                    fontSize = 22.sp,
+                    fontWeight = FontWeight.Bold,
+                    textAlign = TextAlign.Center,
+                    color = Color.Black
+                )
+
+                Spacer(modifier = Modifier.height(40.dp))
+
+                Box(
+                    modifier = Modifier
+                        .size(140.dp)
+                        .border(6.dp, Color(0xFF4CAF50), CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Check,
+                        contentDescription = null,
+                        tint = Color(0xFF4CAF50),
+                        modifier = Modifier.size(90.dp)
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(40.dp))
+
+                Button(
+                    onClick = onCargarOtro,
+                    modifier = Modifier.fillMaxWidth().height(60.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00E5FF)),
+                    shape = RoundedCornerShape(30.dp)
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("Cargar otro producto", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Icon(Icons.Default.Add, contentDescription = null, tint = Color.Black)
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(32.dp))
+
+        Button(
+            onClick = onBackToAdminHome,
+            modifier = Modifier.fillMaxWidth(0.7f).height(55.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF69F0AE)),
+            shape = RoundedCornerShape(14.dp)
+        ) {
+            Text("Volver al Inicio", color = Color.Black, fontWeight = FontWeight.Bold)
+        }
+    }
+}
+
+@Composable
+fun ProductExistsScreen(onViewProduct: () -> Unit, onBackToAdminHome: () -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xFF1E2A35))
+            .padding(24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Image(
+            painter = painterResource(id = R.drawable.logo_easy_price),
+            contentDescription = "Logo",
+            modifier = Modifier.size(200.dp).padding(bottom = 24.dp),
+            contentScale = ContentScale.Fit
+        )
+
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(28.dp),
+            colors = CardDefaults.cardColors(containerColor = Color.White),
+            elevation = CardDefaults.cardElevation(8.dp)
+        ) {
+            Column(
+                modifier = Modifier.padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
+                    "Producto ya existente",
+                    fontSize = 22.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.Black
+                )
+
+                Spacer(modifier = Modifier.height(24.dp))
+
+                Icon(
+                    imageVector = Icons.Default.Face,
+                    contentDescription = null,
+                    tint = Color.Gray,
+                    modifier = Modifier.size(120.dp)
+                )
+
+                Spacer(modifier = Modifier.height(24.dp))
+
+                Text(
+                    "El codigo escaneado ya se encuentra registrado en la base de datos",
+                    textAlign = TextAlign.Center,
+                    fontSize = 16.sp,
+                    color = Color.Black
+                )
+
+                Spacer(modifier = Modifier.height(32.dp))
+
+                Button(
+                    onClick = onViewProduct,
+                    modifier = Modifier.fillMaxWidth().height(55.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00E5FF)),
+                    shape = RoundedCornerShape(28.dp)
+                ) {
+                    Text("Ver Producto", color = Color.Red, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(32.dp))
+
+        Button(
+            onClick = onBackToAdminHome,
+            modifier = Modifier.fillMaxWidth(0.7f).height(55.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF69F0AE)),
+            shape = RoundedCornerShape(14.dp)
+        ) {
+            Text("Volver al Inicio", color = Color.Black, fontWeight = FontWeight.Bold)
+        }
+    }
+}
+
+@Composable
+fun AddProductScreen(
+    barcode: String,
+    onProductLoaded: () -> Unit,
+    onCancel: () -> Unit,
+    onBackToAdminHome: () -> Unit
+) {
+    val db = FirebaseFirestore.getInstance()
+    val context = LocalContext.current
+    
+    var nombre by remember { mutableStateOf("") }
+    var marca by remember { mutableStateOf("") }
+    var precio by remember { mutableStateOf("") }
+    var categoria by remember { mutableStateOf("") }
+    var descripcion by remember { mutableStateOf("") }
+    var isLoading by remember { mutableStateOf(false) }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xFF1E2A35))
+            .padding(16.dp)
+            .verticalScroll(rememberScrollState()),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Image(
+            painter = painterResource(id = R.drawable.logo_easy_price),
+            contentDescription = "Logo",
+            modifier = Modifier.size(180.dp).padding(bottom = 16.dp),
+            contentScale = ContentScale.Fit
+        )
+
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(24.dp),
+            colors = CardDefaults.cardColors(containerColor = Color.White)
+        ) {
+            Column(modifier = Modifier.padding(20.dp)) {
+                Text(
+                    "Carga de Nuevo Producto",
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(bottom = 16.dp)
+                )
+
+                FormField("Código", barcode, enabled = false)
+                FormField("Nombre", nombre) { nombre = it }
+                FormField("Marca", marca) { marca = it }
+                FormField("Precio", precio, keyboardType = KeyboardType.Number) { precio = it }
+                FormField("Categoría", categoria) { categoria = it }
+                FormField("Descripción", descripcion, singleLine = false) { descripcion = it }
+
+                Spacer(modifier = Modifier.height(24.dp))
+
+                Button(
+                    onClick = {
+                        if (nombre.isBlank() || precio.isBlank()) {
+                            Toast.makeText(context, "Nombre y Precio son obligatorios", Toast.LENGTH_SHORT).show()
+                            return@Button
+                        }
+                        isLoading = true
+                        val productData = hashMapOf(
+                            "codigo" to barcode.trim(),
+                            "name" to nombre,
+                            "price" to precio.toDoubleOrNull(),
+                            "marca" to marca,
+                            "categoria" to categoria,
+                            "descripcion" to descripcion
+                        )
+                        db.collection("products").add(productData)
+                            .addOnSuccessListener {
+                                onProductLoaded()
+                            }
+                            .addOnFailureListener {
+                                Toast.makeText(context, "Error al cargar: ${it.message}", Toast.LENGTH_SHORT).show()
+                                isLoading = false
+                            }
+                    },
+                    modifier = Modifier.fillMaxWidth().height(55.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00E5FF)),
+                    shape = RoundedCornerShape(28.dp),
+                    enabled = !isLoading
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("Cargar Producto", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Icon(Icons.Default.Done, contentDescription = null, tint = Color.Black)
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                Button(
+                    onClick = onCancel,
+                    modifier = Modifier.fillMaxWidth().height(55.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color.Red),
+                    shape = RoundedCornerShape(28.dp)
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("Cancelar", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Icon(Icons.Default.Close, contentDescription = null, tint = Color.White)
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        Button(
+            onClick = onBackToAdminHome,
+            modifier = Modifier.fillMaxWidth(0.6f).height(50.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF69F0AE)),
+            shape = RoundedCornerShape(12.dp)
+        ) {
+            Text("Volver al Inicio", color = Color.Black, fontWeight = FontWeight.Bold)
+        }
+    }
+}
+
+@Composable
+fun FormField(
+    label: String,
+    value: String,
+    enabled: Boolean = true,
+    keyboardType: KeyboardType = KeyboardType.Text,
+    singleLine: Boolean = true,
+    onValueChange: (String) -> Unit = {}
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text("$label: ", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+        TextField(
+            value = value,
+            onValueChange = onValueChange,
+            modifier = Modifier.fillMaxWidth(),
+            enabled = enabled,
+            singleLine = singleLine,
+            keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
+            colors = TextFieldDefaults.colors(
+                focusedContainerColor = Color.Transparent,
+                unfocusedContainerColor = Color.Transparent,
+                disabledContainerColor = Color.Transparent
+            )
+        )
     }
 }
 
@@ -214,24 +589,7 @@ fun AdminLoginScreen(onLoginClick: (String, String) -> Unit, onBack: () -> Unit)
 }
 
 @Composable
-fun AdminHomeScreen(onLogout: () -> Unit) {
-    val context = LocalContext.current
-
-    // Launcher para el escáner del administrador
-    val barcodeLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.StartActivityForResult(),
-        onResult = { result ->
-            if (result.resultCode == Activity.RESULT_OK) {
-                val data = result.data
-                val barcode = data?.getStringExtra("barcode_result")
-                val intent = Intent(context, Result::class.java).apply {
-                    putExtra("barcode", barcode)
-                }
-                context.startActivity(intent)
-            }
-        }
-    )
-
+fun AdminHomeScreen(onAdminScan: () -> Unit, onLogout: () -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -249,12 +607,8 @@ fun AdminHomeScreen(onLogout: () -> Unit) {
             contentScale = ContentScale.Fit
         )
 
-        // Botón Cargar Producto (Ahora lanza el escáner)
         Button(
-            onClick = {
-                val intent = Intent(context, ScannerActivity::class.java)
-                barcodeLauncher.launch(intent)
-            },
+            onClick = onAdminScan,
             modifier = Modifier
                 .fillMaxWidth()
                 .height(100.dp),
@@ -286,7 +640,6 @@ fun AdminHomeScreen(onLogout: () -> Unit) {
 
         Spacer(modifier = Modifier.height(40.dp))
 
-        // Botón Salir
         Button(
             onClick = onLogout,
             modifier = Modifier
