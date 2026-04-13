@@ -1,6 +1,6 @@
 package com.example.easyprice.model
 
-// Modelo de producto actualizado con todos los campos necesarios
+// Modelo de producto actualizado con subcategoria
 data class Product(
     val name: String,
     val price: Double,
@@ -8,5 +8,6 @@ data class Product(
     val description: String = "",
     val code: String = "",
     val marca: String? = "",
-    val categoria: String? = ""
+    val categoria: String? = "",
+    val subcategoria: String? = ""
 )

@@ -35,16 +35,18 @@ class Result : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val barcode = intent.getStringExtra("barcode")
+        val startInEditMode = intent.getBooleanExtra("edit_mode", false)
 
         setContent {
             EasyPriceTheme {
                 val context = LocalContext.current
                 var product by remember { mutableStateOf<Product?>(null) }
                 var productNotFound by remember { mutableStateOf(false) }
-                var isEditing by remember { mutableStateOf(false) }
+                var isEditing by remember { mutableStateOf(startInEditMode) }
 
-                if (barcode != null) {
-                    LaunchedEffect(barcode) {
+                // Efecto para realizar la consulta y manejar la navegación
+                LaunchedEffect(barcode) {
+                    if (barcode != null) {
                         val db = FirebaseFirestore.getInstance()
                         db.collection("products").whereEqualTo("codigo", barcode).get()
                             .addOnSuccessListener { documents ->
@@ -58,7 +60,8 @@ class Result : ComponentActivity() {
                                         description = doc.getString("descripcion") ?: "",
                                         code = doc.getString("codigo") ?: "",
                                         marca = doc.getString("marca") ?: "",
-                                        categoria = doc.getString("categoria") ?: ""
+                                        categoria = doc.getString("categoria") ?: "",
+                                        subcategoria = doc.getString("subcategoria") ?: ""
                                     )
                                     product = newProduct
                                     
@@ -70,17 +73,24 @@ class Result : ComponentActivity() {
                                     }
                                 }
                             }
-                            .addOnFailureListener { productNotFound = true }
+                            .addOnFailureListener { 
+                                productNotFound = true 
+                            }
+                    } else {
+                        productNotFound = true
                     }
-                } else {
-                    productNotFound = true
                 }
 
-                if (productNotFound) {
-                    val intent = Intent(context, NotFound::class.java)
-                    startActivity(intent)
-                    finish()
-                } else if (product != null) {
+                // Navegación como efecto secundario para evitar cierres inesperados durante la composición
+                LaunchedEffect(productNotFound) {
+                    if (productNotFound) {
+                        val intent = Intent(context, NotFound::class.java)
+                        context.startActivity(intent)
+                        (context as? Activity)?.finish()
+                    }
+                }
+
+                if (product != null) {
                     if (isEditing) {
                         EditProductScreen(
                             product = product!!,
@@ -95,6 +105,7 @@ class Result : ComponentActivity() {
                                                 "price" to updatedProduct.price,
                                                 "marca" to updatedProduct.marca,
                                                 "categoria" to updatedProduct.categoria,
+                                                "subcategoria" to updatedProduct.subcategoria,
                                                 "descripcion" to updatedProduct.description
                                             )
                                             db.collection("products").document(docId).update(updateData as Map<String, Any>)
@@ -106,17 +117,67 @@ class Result : ComponentActivity() {
                                         }
                                     }
                             },
-                            onCancel = { isEditing = false }
+                            onDelete = {
+                                val db = FirebaseFirestore.getInstance()
+                                db.collection("products").whereEqualTo("codigo", product!!.code).get()
+                                    .addOnSuccessListener { docs ->
+                                        if (!docs.isEmpty) {
+                                            val docId = docs.documents[0].id
+                                            db.collection("products").document(docId).delete()
+                                                .addOnSuccessListener {
+                                                    Toast.makeText(context, "Producto eliminado", Toast.LENGTH_SHORT).show()
+                                                    // Volver a MainActivity forzando el menú del administrador
+                                                    val intent = Intent(context, MainActivity::class.java).apply {
+                                                        flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+                                                        putExtra("target_screen", "admin_home")
+                                                    }
+                                                    context.startActivity(intent)
+                                                    (context as? Activity)?.finish()
+                                                }
+                                        }
+                                    }
+                            },
+                            onCancel = { 
+                                if (startInEditMode) {
+                                    (context as? Activity)?.finish()
+                                } else {
+                                    isEditing = false 
+                                }
+                            }
                         )
                     } else {
                         ResultScreen(
                             product = product!!,
                             onEditClick = { isEditing = true },
+                            onDeleteClick = {
+                                val db = FirebaseFirestore.getInstance()
+                                db.collection("products").whereEqualTo("codigo", product!!.code).get()
+                                    .addOnSuccessListener { docs ->
+                                        if (!docs.isEmpty) {
+                                            val docId = docs.documents[0].id
+                                            db.collection("products").document(docId).delete()
+                                                .addOnSuccessListener {
+                                                    Toast.makeText(context, "Producto eliminado", Toast.LENGTH_SHORT).show()
+                                                    // Volver a MainActivity forzando el menú del administrador
+                                                    val intent = Intent(context, MainActivity::class.java).apply {
+                                                        flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+                                                        putExtra("target_screen", "admin_home")
+                                                    }
+                                                    context.startActivity(intent)
+                                                    (context as? Activity)?.finish()
+                                                }
+                                        }
+                                    }
+                            },
                             onBack = {
-                                // Devolver el control a MainActivity asegurando que caiga en admin_home
                                 (context as? Activity)?.finish()
                             }
                         )
+                    }
+                } else {
+                    // Pantalla de carga mientras se obtiene el producto
+                    Box(modifier = Modifier.fillMaxSize().background(Color(0xFF1E2A35)), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(color = Color(0xFF00E5FF))
                     }
                 }
             }
@@ -128,6 +189,7 @@ class Result : ComponentActivity() {
 fun ResultScreen(
     product: Product,
     onEditClick: () -> Unit,
+    onDeleteClick: () -> Unit,
     onBack: () -> Unit
 ) {
     Column(
@@ -170,20 +232,32 @@ fun ResultScreen(
                 ResultField("Marca", product.marca ?: "")
                 ResultField("Precio", "$${product.price}")
                 ResultField("Categoría", product.categoria ?: "")
+                ResultField("Sub-categoría", product.subcategoria ?: "")
                 ResultField("Descripción", product.description)
 
                 Spacer(modifier = Modifier.height(32.dp))
 
-                Button(
-                    onClick = onEditClick,
-                    modifier = Modifier
-                        .align(Alignment.CenterHorizontally)
-                        .width(160.dp)
-                        .height(55.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00E5FF)),
-                    shape = RoundedCornerShape(28.dp)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    Text("Editar", color = Color.Red, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                    Button(
+                        onClick = onEditClick,
+                        modifier = Modifier.weight(1f).height(55.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00E5FF)),
+                        shape = RoundedCornerShape(28.dp)
+                    ) {
+                        Text("Editar", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                    }
+
+                    Button(
+                        onClick = onDeleteClick,
+                        modifier = Modifier.weight(1f).height(55.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color.Red),
+                        shape = RoundedCornerShape(28.dp)
+                    ) {
+                        Text("Eliminar", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                    }
                 }
             }
         }
@@ -201,17 +275,34 @@ fun ResultScreen(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun EditProductScreen(
     product: Product,
     onSave: (Product) -> Unit,
+    onDelete: () -> Unit,
     onCancel: () -> Unit
 ) {
     var name by remember { mutableStateOf(product.name) }
     var price by remember { mutableStateOf(product.price.toString()) }
     var marca by remember { mutableStateOf(product.marca ?: "") }
     var categoria by remember { mutableStateOf(product.categoria ?: "") }
+    var subcategoria by remember { mutableStateOf(product.subcategoria ?: "") }
     var description by remember { mutableStateOf(product.description) }
+
+    val categoriesMap = mapOf(
+        "Alimentos Frescos y Perecederos" to listOf("Frutas y Verduras", "Carnicería", "Pescadería", "Fiambrería y Quesos", "Panadería y Pastelería"),
+        "Lácteos y Refrigerados" to listOf("Lácteos", "Huevos", "Pastas Frescas"),
+        "Almacén (Alimentos Secos)" to listOf("Infusiones", "Despensa", "Aceites y Condimentos", "Enlatados y Conservas", "Desayuno y Merienda"),
+        "Bebidas" to listOf("Sin Alcohol", "Con Alcohol"),
+        "Congelados" to listOf("Comidas Listas", "Vegetales Congelados", "Helados"),
+        "Limpieza y Cuidado del Hogar" to listOf("Ropa", "Ambientes", "Papelería", "Vajilla"),
+        "Perfumería y Cuidado Personal" to listOf("Higiene", "Bucal", "Cuidado Corporal"),
+        "Otros (Categorías Especiales)" to listOf("Mascotas", "Bebés", "Electro y Bazar")
+    )
+
+    var expandedCategory by remember { mutableStateOf(false) }
+    var expandedSubCategory by remember { mutableStateOf(false) }
 
     Column(
         modifier = Modifier
@@ -236,19 +327,94 @@ fun EditProductScreen(
                 OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Nombre") }, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(value = price, onValueChange = { price = it }, label = { Text("Precio") }, modifier = Modifier.fillMaxWidth(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
                 OutlinedTextField(value = marca, onValueChange = { marca = it }, label = { Text("Marca") }, modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(value = categoria, onValueChange = { categoria = it }, label = { Text("Categoría") }, modifier = Modifier.fillMaxWidth())
+                
+                // Dropdown Categoría
+                Text("Categoría:", fontWeight = FontWeight.Bold, fontSize = 14.sp, modifier = Modifier.padding(top = 8.dp))
+                ExposedDropdownMenuBox(
+                    expanded = expandedCategory,
+                    onExpandedChange = { expandedCategory = !expandedCategory },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    OutlinedTextField(
+                        value = categoria,
+                        onValueChange = {},
+                        readOnly = true,
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedCategory) },
+                        modifier = Modifier.menuAnchor().fillMaxWidth()
+                    )
+                    ExposedDropdownMenu(
+                        expanded = expandedCategory,
+                        onDismissRequest = { expandedCategory = false }
+                    ) {
+                        categoriesMap.keys.forEach { selectionOption ->
+                            DropdownMenuItem(
+                                text = { Text(selectionOption) },
+                                onClick = {
+                                    categoria = selectionOption
+                                    subcategoria = "" 
+                                    expandedCategory = false
+                                }
+                            )
+                        }
+                    }
+                }
+
+                // Dropdown Sub-categoría
+                Text("Sub-categoría:", fontWeight = FontWeight.Bold, fontSize = 14.sp, modifier = Modifier.padding(top = 8.dp))
+                ExposedDropdownMenuBox(
+                    expanded = expandedSubCategory,
+                    onExpandedChange = { if (categoria.isNotEmpty()) expandedSubCategory = !expandedSubCategory },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    OutlinedTextField(
+                        value = subcategoria,
+                        onValueChange = {},
+                        readOnly = true,
+                        enabled = categoria.isNotEmpty(),
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedSubCategory) },
+                        modifier = Modifier.menuAnchor().fillMaxWidth()
+                    )
+                    if (categoria.isNotEmpty()) {
+                        ExposedDropdownMenu(
+                            expanded = expandedSubCategory,
+                            onDismissRequest = { expandedSubCategory = false }
+                        ) {
+                            categoriesMap[categoria]?.forEach { selectionOption ->
+                                DropdownMenuItem(
+                                    text = { Text(selectionOption) },
+                                    onClick = {
+                                        subcategoria = selectionOption
+                                        expandedSubCategory = false
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+
                 OutlinedTextField(value = description, onValueChange = { description = it }, label = { Text("Descripción") }, modifier = Modifier.fillMaxWidth())
                 
                 Spacer(modifier = Modifier.height(24.dp))
                 
                 Button(
-                    onClick = { onSave(product.copy(name = name, price = price.toDoubleOrNull() ?: 0.0, marca = marca, categoria = categoria, description = description)) },
+                    onClick = { onSave(product.copy(name = name, price = price.toDoubleOrNull() ?: 0.0, marca = marca, categoria = categoria, subcategoria = subcategoria, description = description)) },
                     modifier = Modifier.fillMaxWidth().height(50.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00E5FF))
                 ) {
                     Text("Guardar Cambios", color = Color.Black, fontWeight = FontWeight.Bold)
                 }
                 Spacer(modifier = Modifier.height(8.dp))
+                
+                // Botón Eliminar solicitado
+                Button(
+                    onClick = onDelete,
+                    modifier = Modifier.fillMaxWidth().height(50.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color.Red)
+                ) {
+                    Text("Eliminar Producto", color = Color.White, fontWeight = FontWeight.Bold)
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+
                 Button(
                     onClick = onCancel,
                     modifier = Modifier.fillMaxWidth().height(50.dp),
