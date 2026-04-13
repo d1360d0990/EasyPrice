@@ -1,8 +1,10 @@
 package com.example.easyprice
 
 import android.app.Activity
+import android.content.Context
 import android.content.Intent
 import android.os.Bundle
+import android.util.Log
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -12,7 +14,6 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -55,15 +56,83 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.os.bundleOf
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.easyprice.data.FavoritesManager
 import com.example.easyprice.data.HistoryManager
 import com.example.easyprice.model.Product
 import com.example.easyprice.ui.theme.EasyPriceTheme
+import com.google.firebase.analytics.FirebaseAnalytics
+import com.google.firebase.analytics.ktx.analytics
+import com.google.firebase.firestore.AggregateSource
+import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.Query
+import com.google.firebase.firestore.SetOptions
+import com.google.firebase.ktx.Firebase
+
+// 🧠 Dashboard ViewModel
+class DashboardViewModel : ViewModel() {
+    var totalScans by mutableIntStateOf(0)
+    var activeUsers by mutableIntStateOf(0)
+    var totalProducts by mutableIntStateOf(0)
+    var isLoading by mutableStateOf(false)
+
+    var topProducts by mutableStateOf<List<String>>(emptyList())
+
+    // ☁️ Carga de estadísticas reales
+    fun loadStats(context: Context) {
+        isLoading = true
+        val db = FirebaseFirestore.getInstance()
+        
+        // 1. Obtener Scans y Usuarios desde el documento global
+        db.collection("stats").document("global").get()
+            .addOnSuccessListener { doc ->
+                if (doc.exists()) {
+                    totalScans = doc.getLong("total_scans")?.toInt() ?: 0
+                    activeUsers = doc.getLong("active_users")?.toInt() ?: 0
+                }
+                
+                // 2. Conteo REAL de productos (Total de documentos en la colección 'products')
+                db.collection("products").count().get(AggregateSource.SERVER)
+                    .addOnSuccessListener { snapshot ->
+                        totalProducts = snapshot.count.toInt()
+                        
+                        // 3. Obtener Top Productos (los más escaneados)
+                        db.collection("products")
+                            .orderBy("scan_count", Query.Direction.DESCENDING)
+                            .limit(5)
+                            .get()
+                            .addOnSuccessListener { topSnapshot ->
+                                topProducts = topSnapshot.documents.map { it.getString("name") ?: "Sin nombre" }
+                                isLoading = false
+                                Log.d("DashboardStats", "Dashboard actualizado")
+                            }
+                            .addOnFailureListener {
+                                isLoading = false
+                                Log.e("DashboardStats", "Error al cargar top productos", it)
+                            }
+                    }
+                    .addOnFailureListener { e ->
+                        isLoading = false
+                        Log.e("DashboardStats", "Error al contar productos", e)
+                    }
+            }
+            .addOnFailureListener { e ->
+                isLoading = false
+                Log.e("DashboardStats", "Error al conectar con stats/global", e)
+                Toast.makeText(context, "Error de conexión al Dashboard", Toast.LENGTH_SHORT).show()
+            }
+    }
+}
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        
+        // Registrar actividad de usuario al abrir la app
+        trackUserActivity()
         
         val targetScreen = intent.getStringExtra("target_screen") ?: "role_selection"
         
@@ -120,7 +189,7 @@ class MainActivity : ComponentActivity() {
                     "admin_home" -> {
                         AdminHomeScreen(
                             onAdminScan = {
-                                val intent = Intent(this, ScannerActivity::class.java)
+                                val intent = Intent(context, ScannerActivity::class.java)
                                 barcodeLauncher.launch(intent)
                             },
                             onDatabaseClick = {
@@ -131,18 +200,24 @@ class MainActivity : ComponentActivity() {
                     }
                     "management_home" -> {
                         ManagementHomeScreen(
-                            onLogout = { currentScreen = "role_selection" }
+                            onLogout = { currentScreen = "role_selection" },
+                            onDashboardClick = { currentScreen = "dashboard" }
+                        )
+                    }
+                    "dashboard" -> {
+                        DashboardScreen(
+                            onBack = { currentScreen = "management_home" }
                         )
                     }
                     "admin_database" -> {
                         DatabaseScreen(
                             onProductClick = { barcode ->
                                 scannedBarcode = barcode
-                                val intent = Intent(this, Result::class.java).apply {
+                                val intent = Intent(context, Result::class.java).apply {
                                     putExtra("barcode", barcode)
                                     putExtra("edit_mode", true)
                                 }
-                                startActivity(intent)
+                                context.startActivity(intent)
                             },
                             onBackToAdminHome = { currentScreen = "admin_home" }
                         )
@@ -151,10 +226,10 @@ class MainActivity : ComponentActivity() {
                         ProductExistsScreen(
                             onViewProduct = {
                                 currentScreen = "admin_home"
-                                val intent = Intent(this, Result::class.java).apply {
+                                val intent = Intent(context, Result::class.java).apply {
                                     putExtra("barcode", scannedBarcode)
                                 }
-                                startActivity(intent)
+                                context.startActivity(intent)
                             },
                             onBackToAdminHome = { currentScreen = "admin_home" }
                         )
@@ -171,7 +246,7 @@ class MainActivity : ComponentActivity() {
                     "admin_success" -> {
                         SuccessScreen(
                             onCargarOtro = {
-                                val intent = Intent(this, ScannerActivity::class.java)
+                                val intent = Intent(context, ScannerActivity::class.java)
                                 barcodeLauncher.launch(intent)
                             },
                             onBackToAdminHome = { currentScreen = "admin_home" }
@@ -187,6 +262,151 @@ class MainActivity : ComponentActivity() {
                         MainScreen()
                     }
                 }
+            }
+        }
+    }
+
+    private fun trackUserActivity() {
+        // Incrementa active_users en cada apertura de la app
+        FirebaseFirestore.getInstance().collection("stats").document("global")
+            .set(mapOf("active_users" to FieldValue.increment(1)), SetOptions.merge())
+            .addOnSuccessListener { Log.d("Stats", "Usuario activo incrementado en stats/global") }
+            .addOnFailureListener { e -> Log.e("Stats", "Error al incrementar usuarios", e) }
+    }
+}
+
+@Composable
+fun DashboardScreen(viewModel: DashboardViewModel = viewModel(), onBack: () -> Unit) {
+    val context = LocalContext.current
+    LaunchedEffect(Unit) {
+        Firebase.analytics.logEvent("view_dashboard", bundleOf(
+            "user_type" to "gerencia",
+            "timestamp" to System.currentTimeMillis()
+        ))
+        viewModel.loadStats(context)
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xFF1A0B46))
+            .padding(16.dp)
+            .verticalScroll(rememberScrollState())
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = onBack) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
+            }
+            Text("📊 Dashboard", color = Color.White, style = MaterialTheme.typography.headlineMedium)
+        }
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        if (viewModel.isLoading) {
+            Box(modifier = Modifier.fillMaxWidth().height(100.dp), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator(color = Color(0xFF2EF2A3))
+            }
+        } else {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                StatCard("Escaneos", viewModel.totalScans.toString(), Modifier.weight(1f))
+                StatCard("Usuarios", viewModel.activeUsers.toString(), Modifier.weight(1f))
+                StatCard("Productos", viewModel.totalProducts.toString(), Modifier.weight(1f))
+            }
+        }
+
+        Spacer(modifier = Modifier.height(32.dp))
+
+        Text("Actividad semanal", color = Color.White, style = MaterialTheme.typography.titleMedium)
+        Spacer(modifier = Modifier.height(16.dp))
+        SimpleChart()
+
+        Spacer(modifier = Modifier.height(32.dp))
+
+        Text("Top Productos", color = Color.White, style = MaterialTheme.typography.titleMedium)
+        Spacer(modifier = Modifier.height(16.dp))
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(containerColor = Color(0xFF2EF2A3).copy(alpha = 0.1f)),
+            shape = RoundedCornerShape(16.dp)
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                if (viewModel.topProducts.isEmpty()) {
+                    Text("No hay datos de escaneos aún", color = Color.Gray, fontSize = 14.sp)
+                } else {
+                    viewModel.topProducts.forEach {
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 4.dp)) {
+                            Text("🔥", fontSize = 18.sp)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(it, color = Color.White, fontSize = 16.sp)
+                        }
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(40.dp))
+
+        Button(
+            onClick = onBack,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(60.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFD54F)),
+            shape = RoundedCornerShape(30.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null, tint = Color(0xFF1A0B46))
+                Spacer(modifier = Modifier.width(12.dp))
+                Text("Salir", color = Color(0xFF1A0B46), fontSize = 18.sp, fontWeight = FontWeight.Bold)
+            }
+        }
+        
+        Spacer(modifier = Modifier.height(24.dp))
+    }
+}
+
+@Composable
+fun StatCard(title: String, value: String, modifier: Modifier = Modifier) {
+    Card(
+        modifier = modifier.height(100.dp),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFF2EF2A3)),
+        shape = RoundedCornerShape(16.dp),
+        elevation = CardDefaults.cardElevation(4.dp)
+    ) {
+        Column(
+            modifier = Modifier.fillMaxSize().padding(12.dp),
+            verticalArrangement = Arrangement.Center,
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(title, color = Color(0xFF1A0B46), style = MaterialTheme.typography.labelMedium)
+            Text(value, color = Color(0xFF1A0B46), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+        }
+    }
+}
+
+@Composable
+fun SimpleChart() {
+    Card(
+        modifier = Modifier.fillMaxWidth().height(150.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.05f)),
+        shape = RoundedCornerShape(16.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxSize().padding(16.dp),
+            horizontalArrangement = Arrangement.SpaceEvenly,
+            verticalAlignment = Alignment.Bottom
+        ) {
+            val values = listOf(3, 6, 8, 5, 9, 7, 4)
+            values.forEach {
+                Box(
+                    modifier = Modifier
+                        .width(24.dp)
+                        .height((it * 12).dp)
+                        .background(Color(0xFFFFD54F), RoundedCornerShape(topStart = 4.dp, topEnd = 4.dp))
+                )
             }
         }
     }
@@ -384,7 +604,7 @@ fun AdminMenuButton(text: String, icon: ImageVector, onClick: () -> Unit, modifi
 }
 
 @Composable
-fun ManagementHomeScreen(onLogout: () -> Unit) {
+fun ManagementHomeScreen(onLogout: () -> Unit, onDashboardClick: () -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -404,7 +624,12 @@ fun ManagementHomeScreen(onLogout: () -> Unit) {
 
         Column(modifier = Modifier.fillMaxWidth()) {
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(20.dp)) {
-                ManagementButton(text = "Dashboard", icon = Icons.Filled.Dashboard, modifier = Modifier.weight(1f))
+                ManagementButton(
+                    text = "Dashboard", 
+                    icon = Icons.Filled.Dashboard, 
+                    modifier = Modifier.weight(1f),
+                    onClick = onDashboardClick
+                )
                 ManagementButton(text = "Productos", icon = Icons.Filled.Inventory, modifier = Modifier.weight(1f))
             }
             Spacer(modifier = Modifier.height(20.dp))
@@ -439,9 +664,9 @@ fun ManagementHomeScreen(onLogout: () -> Unit) {
 }
 
 @Composable
-fun ManagementButton(text: String, icon: ImageVector, modifier: Modifier) {
+fun ManagementButton(text: String, icon: ImageVector, modifier: Modifier, onClick: () -> Unit = {}) {
     Button(
-        onClick = { },
+        onClick = onClick,
         modifier = modifier.height(140.dp),
         shape = RoundedCornerShape(35.dp),
         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2EF2A3))
@@ -622,7 +847,9 @@ fun AddProductScreen(barcode: String, onProductLoaded: () -> Unit, onError: () -
                     if (nombre.isBlank() || precio.isBlank() || categoria.isBlank() || subCategoria.isBlank()) { Toast.makeText(context, "Nombre, Precio, Categoría y Sub-categoría son obligatorios", Toast.LENGTH_SHORT).show(); return@Button }
                     isLoading = true
                     val productData = hashMapOf("codigo" to barcode.trim(), "name" to nombre, "price" to precio.toDoubleOrNull(), "marca" to marca, "categoria" to categoria, "subcategoria" to subCategoria, "descripcion" to descripcion)
-                    db.collection("products").add(productData).addOnSuccessListener { onProductLoaded() }.addOnFailureListener { onError(); isLoading = false }
+                    db.collection("products").add(productData).addOnSuccessListener {
+                        onProductLoaded() 
+                    }.addOnFailureListener { onError(); isLoading = false }
                 }, modifier = Modifier.fillMaxWidth().height(55.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00E5FF)), shape = RoundedCornerShape(28.dp), enabled = !isLoading) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text("Cargar Producto", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 16.sp)
@@ -694,7 +921,7 @@ fun RoleButton(text: String, icon: ImageVector, onClick: () -> Unit) {
 @Composable
 fun MainScreen() {
     val context = LocalContext.current
-    val barcodeLauncher = rememberLauncherForActivityResult(contract = ActivityResultContracts.StartActivityForResult(), onResult = { result -> if (result.resultCode == Activity.RESULT_OK) { val barcode = result.data?.getStringExtra("barcode_result"); val intent = Intent(context, Result::class.java).apply { putExtra("barcode", barcode) }; context.startActivity(intent) } })
+    val barcodeLauncher = rememberLauncherForActivityResult(contract = ActivityResultContracts.StartActivityForResult(), onResult = { result -> if (result.resultCode == Activity.RESULT_OK) { val barcode = result.data?.getStringExtra("barcode_result"); val intent = Intent(context, com.example.easyprice.Result::class.java).apply { putExtra("barcode", barcode) }; context.startActivity(intent) } })
     Column(modifier = Modifier.fillMaxSize().background(Color(0xFF1E2A35)).padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         Spacer(modifier = Modifier.height(40.dp))
         Image(painter = painterResource(id = R.drawable.logo_easy_price), contentDescription = "Logo Easy Price", modifier = Modifier.size(260.dp))

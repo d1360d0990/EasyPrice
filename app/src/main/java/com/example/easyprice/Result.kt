@@ -29,7 +29,9 @@ import androidx.compose.ui.unit.sp
 import com.example.easyprice.data.HistoryManager
 import com.example.easyprice.model.Product
 import com.example.easyprice.ui.theme.EasyPriceTheme
+import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.SetOptions
 
 class Result : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -65,12 +67,20 @@ class Result : ComponentActivity() {
                                     )
                                     product = newProduct
                                     
+                                    // Guardar en historial local
                                     val existingIndex = HistoryManager.historyList.indexOfFirst { it.code == newProduct.code }
                                     if (existingIndex != -1) {
                                         HistoryManager.historyList[existingIndex] = newProduct
                                     } else {
                                         HistoryManager.historyList.add(newProduct)
                                     }
+
+                                    // 📈 Actualizar estadísticas globales en Firestore
+                                    db.collection("stats").document("global")
+                                        .set(mapOf("total_scans" to FieldValue.increment(1)), SetOptions.merge())
+
+                                    // 🔥 Incrementar contador de escaneos del producto específico para el TOP PRODUCTOS
+                                    doc.reference.update("scan_count", FieldValue.increment(1))
                                 }
                             }
                             .addOnFailureListener { 
@@ -126,7 +136,7 @@ class Result : ComponentActivity() {
                                             db.collection("products").document(docId).delete()
                                                 .addOnSuccessListener {
                                                     Toast.makeText(context, "Producto eliminado", Toast.LENGTH_SHORT).show()
-                                                    // Volver a MainActivity forzando el menú del administrador
+                                                    
                                                     val intent = Intent(context, MainActivity::class.java).apply {
                                                         flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
                                                         putExtra("target_screen", "admin_home")
@@ -158,7 +168,7 @@ class Result : ComponentActivity() {
                                             db.collection("products").document(docId).delete()
                                                 .addOnSuccessListener {
                                                     Toast.makeText(context, "Producto eliminado", Toast.LENGTH_SHORT).show()
-                                                    // Volver a MainActivity forzando el menú del administrador
+                                                    
                                                     val intent = Intent(context, MainActivity::class.java).apply {
                                                         flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
                                                         putExtra("target_screen", "admin_home")
@@ -405,7 +415,6 @@ fun EditProductScreen(
                 }
                 Spacer(modifier = Modifier.height(8.dp))
                 
-                // Botón Eliminar solicitado
                 Button(
                     onClick = onDelete,
                     modifier = Modifier.fillMaxWidth().height(50.dp),
