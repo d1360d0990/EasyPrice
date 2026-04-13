@@ -26,14 +26,18 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Dashboard
 import androidx.compose.material.icons.filled.Done
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Face
+import androidx.compose.material.icons.filled.Inventory
 import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.ShoppingCart
+import androidx.compose.material.icons.filled.ShowChart
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -104,6 +108,8 @@ class MainActivity : ComponentActivity() {
                             onLoginClick = { user, pass ->
                                 if (user == "admin" && pass == "admin") {
                                     currentScreen = "admin_home"
+                                } else if (user == "gerencia" && pass == "gerencia") {
+                                    currentScreen = "management_home"
                                 } else {
                                     Toast.makeText(this, "Credenciales incorrectas", Toast.LENGTH_SHORT).show()
                                 }
@@ -120,6 +126,11 @@ class MainActivity : ComponentActivity() {
                             onDatabaseClick = {
                                 currentScreen = "admin_database"
                             },
+                            onLogout = { currentScreen = "role_selection" }
+                        )
+                    }
+                    "management_home" -> {
+                        ManagementHomeScreen(
                             onLogout = { currentScreen = "role_selection" }
                         )
                     }
@@ -373,6 +384,82 @@ fun AdminMenuButton(text: String, icon: ImageVector, onClick: () -> Unit, modifi
 }
 
 @Composable
+fun ManagementHomeScreen(onLogout: () -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xFF1A0B46))
+            .padding(24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Spacer(modifier = Modifier.height(20.dp))
+        Image(
+            painter = painterResource(id = R.drawable.logo_easy_price),
+            contentDescription = "Logo",
+            modifier = Modifier.size(220.dp),
+            contentScale = ContentScale.Fit
+        )
+        
+        Spacer(modifier = Modifier.height(40.dp))
+
+        Column(modifier = Modifier.fillMaxWidth()) {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+                ManagementButton(text = "Dashboard", icon = Icons.Filled.Dashboard, modifier = Modifier.weight(1f))
+                ManagementButton(text = "Productos", icon = Icons.Filled.Inventory, modifier = Modifier.weight(1f))
+            }
+            Spacer(modifier = Modifier.height(20.dp))
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+                ManagementButton(text = "Escaneos", icon = Icons.Filled.QrCodeScanner, modifier = Modifier.weight(1f))
+                ManagementButton(text = "Tendencias", icon = Icons.Filled.ShowChart, modifier = Modifier.weight(1f))
+            }
+        }
+
+        Spacer(modifier = Modifier.weight(1f))
+
+        Button(
+            onClick = onLogout,
+            modifier = Modifier
+                .width(180.dp)
+                .height(120.dp),
+            shape = RoundedCornerShape(35.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFD54F))
+        ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                    contentDescription = null,
+                    tint = Color(0xFF757575),
+                    modifier = Modifier.size(60.dp)
+                )
+                Text("Salir", color = Color(0xFF1A0B46), fontSize = 18.sp, fontWeight = FontWeight.Bold)
+            }
+        }
+        Spacer(modifier = Modifier.height(20.dp))
+    }
+}
+
+@Composable
+fun ManagementButton(text: String, icon: ImageVector, modifier: Modifier) {
+    Button(
+        onClick = { },
+        modifier = modifier.height(140.dp),
+        shape = RoundedCornerShape(35.dp),
+        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2EF2A3))
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = Color(0xFF757575),
+                modifier = Modifier.size(70.dp)
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(text = text, color = Color(0xFF1A0B46), fontSize = 16.sp, fontWeight = FontWeight.Bold)
+        }
+    }
+}
+
+@Composable
 fun SuccessScreen(onCargarOtro: () -> Unit, onBackToAdminHome: () -> Unit) {
     Column(
         modifier = Modifier.fillMaxSize().background(Color(0xFF1E2A35)).padding(24.dp),
@@ -564,7 +651,7 @@ fun AddProductScreen(barcode: String, onProductLoaded: () -> Unit, onError: () -
 fun FormField(label: String, value: String, enabled: Boolean = true, keyboardType: KeyboardType = KeyboardType.Text, singleLine: Boolean = true, onValueChange: (String) -> Unit = {}) {
     Row(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
         Text("$label: ", fontWeight = FontWeight.Bold, fontSize = 16.sp)
-        TextField(value = value, onValueChange = onValueChange, modifier = Modifier.fillMaxWidth(), enabled = enabled, singleLine = singleLine, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), colors = TextFieldDefaults.colors(focusedContainerColor = Color.Transparent, unfocusedContainerColor = Color.Transparent, disabledContainerColor = Color.Transparent))
+        TextField(value = value, onValueChange = onValueChange, modifier = Modifier.fillMaxWidth(), enabled = enabled, singleLine = singleLine, keyboardOptions = KeyboardOptions(keyboardType = keyboardType), colors = TextFieldDefaults.colors(focusedContainerColor = Color.Transparent, unfocusedContainerColor = Color.Transparent, disabledContainerColor = Color.Transparent))
     }
 }
 
