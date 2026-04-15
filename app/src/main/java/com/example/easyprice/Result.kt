@@ -8,6 +8,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -32,6 +33,8 @@ import com.example.easyprice.ui.theme.EasyPriceTheme
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.SetOptions
+import java.text.SimpleDateFormat
+import java.util.*
 
 class Result : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -56,8 +59,11 @@ class Result : ComponentActivity() {
                                     productNotFound = true
                                 } else {
                                     val doc = documents.documents[0]
+                                    val productId = doc.id
+                                    val productName = doc.getString("name") ?: ""
+                                    
                                     val newProduct = Product(
-                                        name = doc.getString("name") ?: "",
+                                        name = productName,
                                         price = doc.getDouble("price") ?: 0.0,
                                         description = doc.getString("descripcion") ?: "",
                                         code = doc.getString("codigo") ?: "",
@@ -79,8 +85,28 @@ class Result : ComponentActivity() {
                                     db.collection("stats").document("global")
                                         .set(mapOf("total_scans" to FieldValue.increment(1)), SetOptions.merge())
 
-                                    // 🔥 Incrementar contador de escaneos del producto específico para el TOP PRODUCTOS
-                                    doc.reference.update("scan_count", FieldValue.increment(1))
+                                    // 🔥 6. Actualizar datos al escanear (product_stats)
+                                    // Se verifica si existe para inicializar last_week_count si es necesario
+                                    db.collection("product_stats").document(productId).get()
+                                        .addOnSuccessListener { statDoc ->
+                                            val statsData = mutableMapOf<String, Any>(
+                                                "name" to productName,
+                                                "scan_count" to FieldValue.increment(1)
+                                            )
+                                            // Si el documento no existe, inicializamos last_week_count en 0
+                                            if (!statDoc.exists()) {
+                                                statsData["last_week_count"] = 0
+                                            }
+                                            
+                                            db.collection("product_stats")
+                                                .document(productId)
+                                                .set(statsData, SetOptions.merge())
+                                        }
+
+                                    // 📅 Registrar escaneo por día automáticamente (ID = Fecha actual)
+                                    val dateId = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())
+                                    db.collection("scans_by_day").document(dateId)
+                                        .set(mapOf("count" to FieldValue.increment(1)), SetOptions.merge())
                                 }
                             }
                             .addOnFailureListener { 

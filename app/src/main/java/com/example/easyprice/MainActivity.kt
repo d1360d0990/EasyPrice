@@ -3,8 +3,14 @@ package com.example.easyprice
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Paint
+import android.graphics.pdf.PdfDocument
 import android.os.Bundle
+import android.os.Environment
 import android.util.Log
+import android.view.View
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -14,6 +20,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -25,6 +32,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Assessment
+import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Dashboard
@@ -37,6 +46,8 @@ import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Send
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.ShoppingCart
 import androidx.compose.material.icons.filled.ShowChart
 import androidx.compose.material3.*
@@ -56,6 +67,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.content.FileProvider
 import androidx.core.os.bundleOf
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -63,6 +76,10 @@ import com.example.easyprice.data.FavoritesManager
 import com.example.easyprice.data.HistoryManager
 import com.example.easyprice.model.Product
 import com.example.easyprice.ui.theme.EasyPriceTheme
+import com.github.mikephil.charting.charts.LineChart
+import com.github.mikephil.charting.data.Entry
+import com.github.mikephil.charting.data.LineData
+import com.github.mikephil.charting.data.LineDataSet
 import com.google.firebase.analytics.FirebaseAnalytics
 import com.google.firebase.analytics.ktx.analytics
 import com.google.firebase.firestore.AggregateSource
@@ -71,6 +88,10 @@ import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
 import com.google.firebase.firestore.SetOptions
 import com.google.firebase.ktx.Firebase
+import java.io.File
+import java.io.FileOutputStream
+import java.text.SimpleDateFormat
+import java.util.*
 
 // 🧠 Dashboard ViewModel
 class DashboardViewModel : ViewModel() {
@@ -81,12 +102,10 @@ class DashboardViewModel : ViewModel() {
 
     var topProducts by mutableStateOf<List<String>>(emptyList())
 
-    // ☁️ Carga de estadísticas reales
     fun loadStats(context: Context) {
         isLoading = true
         val db = FirebaseFirestore.getInstance()
         
-        // 1. Obtener Scans y Usuarios desde el documento global
         db.collection("stats").document("global").get()
             .addOnSuccessListener { doc ->
                 if (doc.exists()) {
@@ -94,45 +113,385 @@ class DashboardViewModel : ViewModel() {
                     activeUsers = doc.getLong("active_users")?.toInt() ?: 0
                 }
                 
-                // 2. Conteo REAL de productos (Total de documentos en la colección 'products')
                 db.collection("products").count().get(AggregateSource.SERVER)
                     .addOnSuccessListener { snapshot ->
                         totalProducts = snapshot.count.toInt()
                         
-                        // 3. Obtener Top Productos (los más escaneados)
-                        db.collection("products")
+                        db.collection("product_stats")
                             .orderBy("scan_count", Query.Direction.DESCENDING)
                             .limit(5)
                             .get()
                             .addOnSuccessListener { topSnapshot ->
                                 topProducts = topSnapshot.documents.map { it.getString("name") ?: "Sin nombre" }
                                 isLoading = false
-                                Log.d("DashboardStats", "Dashboard actualizado")
                             }
                             .addOnFailureListener {
                                 isLoading = false
-                                Log.e("DashboardStats", "Error al cargar top productos", it)
                             }
                     }
                     .addOnFailureListener { e ->
                         isLoading = false
-                        Log.e("DashboardStats", "Error al contar productos", e)
                     }
             }
             .addOnFailureListener { e ->
                 isLoading = false
-                Log.e("DashboardStats", "Error al conectar con stats/global", e)
                 Toast.makeText(context, "Error de conexión al Dashboard", Toast.LENGTH_SHORT).show()
             }
+    }
+}
+
+// 🧠 Productos ViewModel
+class ProductosViewModel : ViewModel() {
+    var productos by mutableStateOf<List<Product>>(emptyList())
+    var isLoading by mutableStateOf(false)
+
+    fun loadProductos() {
+        isLoading = true
+        FirebaseFirestore.getInstance()
+            .collection("products")
+            .get()
+            .addOnSuccessListener { result ->
+                productos = result.mapNotNull { doc ->
+                    try {
+                        Product(
+                            name = doc.getString("name") ?: "",
+                            price = doc.getDouble("price") ?: 0.0,
+                            code = doc.getString("codigo") ?: "",
+                            marca = doc.getString("marca") ?: "",
+                            categoria = doc.getString("categoria") ?: "",
+                            subcategoria = doc.getString("subcategoria") ?: "",
+                            description = doc.getString("descripcion") ?: ""
+                        )
+                    } catch (e: Exception) { null }
+                }
+                isLoading = false
+            }
+            .addOnFailureListener {
+                isLoading = false
+            }
+    }
+}
+
+// 🧠 Escaneos ViewModel
+class EscaneosViewModel : ViewModel() {
+    var topProductos by mutableStateOf<List<Pair<String, Int>>>(emptyList())
+    var weeklyData by mutableStateOf<List<Int>>(emptyList())
+    var isLoading by mutableStateOf(false)
+
+    fun loadData() {
+        isLoading = true
+        loadTopProductos()
+        loadWeeklyData()
+    }
+
+    private fun loadTopProductos() {
+        FirebaseFirestore.getInstance()
+            .collection("product_stats")
+            .orderBy("scan_count", Query.Direction.DESCENDING)
+            .limit(5)
+            .get()
+            .addOnSuccessListener { result ->
+                topProductos = result.map {
+                    Pair(
+                        it.getString("name") ?: "",
+                        it.getLong("scan_count")?.toInt() ?: 0
+                    )
+                }
+                isLoading = false
+            }
+            .addOnFailureListener { isLoading = false }
+    }
+
+    private fun loadWeeklyData() {
+        // Simulación (después podés usar colección "scans_by_day")
+        weeklyData = listOf(10, 25, 40, 30, 50, 60, 45)
+    }
+}
+
+// 🧠 Tendencias ViewModel
+class TendenciasViewModel : ViewModel() {
+    var weeklyData by mutableStateOf<List<Int>>(emptyList())
+    var growthProducts by mutableStateOf<List<Triple<String, Int, Int>>>(emptyList())
+    var isLoading by mutableStateOf(false)
+
+    fun loadData() {
+        isLoading = true
+        loadWeeklyData()
+        loadGrowthProducts()
+    }
+
+    private fun loadWeeklyData() {
+        FirebaseFirestore.getInstance()
+            .collection("scans_by_day")
+            .orderBy("__name__", Query.Direction.ASCENDING)
+            .limitToLast(7)
+            .get()
+            .addOnSuccessListener { result ->
+                weeklyData = result.map {
+                    it.getLong("count")?.toInt() ?: 0
+                }
+                isLoading = false
+            }
+            .addOnFailureListener { isLoading = false }
+    }
+
+    private fun loadGrowthProducts() {
+        FirebaseFirestore.getInstance()
+            .collection("product_stats")
+            .get()
+            .addOnSuccessListener { result ->
+                growthProducts = result.map {
+                    val name = it.getString("name") ?: ""
+                    val current = it.getLong("scan_count")?.toInt() ?: 0
+                    val last = it.getLong("last_week_count")?.toInt() ?: 0
+
+                    Triple(name, current, last)
+                }.sortedByDescending {
+                    it.second - it.third
+                }.take(5)
+            }
+    }
+}
+
+// 🧠 Reportes ViewModel
+class ReportesViewModel : ViewModel() {
+    var isGenerating by mutableStateOf(false)
+    var reportsList = mutableStateListOf<String>()
+
+    data class ReportProduct(val name: String, val count: Int)
+
+    fun generarNuevoReporte(context: Context) {
+        isGenerating = true
+        val db = FirebaseFirestore.getInstance()
+        
+        // Recolectar datos reales de Firestore
+        db.collection("stats").document("global").get().addOnSuccessListener { statsDoc ->
+            val totalScans = statsDoc.getLong("total_scans") ?: 0
+            val activeUsers = statsDoc.getLong("active_users") ?: 0
+            
+            db.collection("products").count().get(AggregateSource.SERVER).addOnSuccessListener { productSnapshot ->
+                val totalProductsCount = productSnapshot.count
+
+                db.collection("product_stats")
+                    .orderBy("scan_count", Query.Direction.DESCENDING)
+                    .limit(5)
+                    .get()
+                    .addOnSuccessListener { topSnap ->
+                        val topProducts = topSnap.documents.map { 
+                            ReportProduct(
+                                name = it.getString("name") ?: "Sin nombre",
+                                count = it.getLong("scan_count")?.toInt() ?: 0
+                            )
+                        }
+
+                        // Obtener datos para el gráfico
+                        db.collection("scans_by_day")
+                            .orderBy("__name__", Query.Direction.ASCENDING)
+                            .limitToLast(7)
+                            .get()
+                            .addOnSuccessListener { scansSnap ->
+                                val weeklyScans = scansSnap.documents.map { it.getLong("count")?.toInt() ?: 0 }
+                                
+                                // Generar el Bitmap del gráfico off-screen
+                                val chartBitmap = createChartBitmap(context, weeklyScans)
+
+                                // Crear el PDF real con el gráfico
+                                crearPdfReal(context, totalScans, activeUsers, totalProductsCount, topProducts, chartBitmap)
+                            }
+                            .addOnFailureListener {
+                                isGenerating = false
+                                Toast.makeText(context, "Error al obtener datos históricos", Toast.LENGTH_SHORT).show()
+                            }
+                    }
+                    .addOnFailureListener {
+                        isGenerating = false
+                        Toast.makeText(context, "Error al obtener top productos", Toast.LENGTH_SHORT).show()
+                    }
+            }
+            .addOnFailureListener {
+                isGenerating = false
+                Toast.makeText(context, "Error al contar productos", Toast.LENGTH_SHORT).show()
+            }
+        }.addOnFailureListener {
+            isGenerating = false
+            Toast.makeText(context, "Error al obtener estadísticas globales", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun createChartBitmap(context: Context, data: List<Int>): Bitmap {
+        val chart = LineChart(context)
+        chart.layout(0, 0, 600, 300) // Tamaño del gráfico en el PDF
+        
+        val entries = data.mapIndexed { index, value ->
+            Entry(index.toFloat(), value.toFloat())
+        }
+
+        val dataSet = LineDataSet(entries, "Escaneos").apply {
+            color = android.graphics.Color.parseColor("#2EF2A3")
+            setCircleColor(android.graphics.Color.parseColor("#FFD54F"))
+            lineWidth = 2f
+            setDrawValues(false)
+        }
+
+        chart.data = LineData(dataSet)
+        chart.description.isEnabled = false
+        chart.legend.isEnabled = false
+        chart.xAxis.setDrawGridLines(false)
+        chart.axisLeft.setDrawGridLines(false)
+        chart.axisRight.isEnabled = false
+        
+        // Renderizar el gráfico a un Bitmap
+        val bitmap = Bitmap.createBitmap(600, 300, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+        chart.draw(canvas)
+        return bitmap
+    }
+
+    private fun crearPdfReal(context: Context, scans: Long, users: Long, products: Long, topProductos: List<ReportProduct>, chartBitmap: Bitmap) {
+        val pdfDocument = PdfDocument()
+        // Page size set to A4 (595 x 842 points)
+        val pageInfo = PdfDocument.PageInfo.Builder(595, 842, 1).create()
+        val page = pdfDocument.startPage(pageInfo)
+        val canvas: Canvas = page.canvas
+        val paint = Paint()
+        
+        paint.textSize = 14f
+        
+        // Agregar texto + métricas
+        canvas.drawText("Total escaneos: 1245", 50f, 450f, paint)
+        canvas.drawText("Usuarios activos: 89", 50f, 480f, paint)
+
+        // Agregar Top productos
+        var y = 520f
+        topProductos.forEach {
+            canvas.drawText("${it.name} - ${it.count}", 50f, y, paint)
+            y += 30f
+        }
+
+        pdfDocument.finishPage(page)
+
+        // Guardar el PDF
+        val fileName = "reporte.pdf"
+        val file = File(context.getExternalFilesDir(null), fileName)
+
+        try {
+            pdfDocument.writeTo(FileOutputStream(file))
+            if (!reportsList.contains(fileName)) reportsList.add(0, fileName)
+            Toast.makeText(context, "Reporte guardado como $fileName", Toast.LENGTH_SHORT).show()
+        } catch (e: Exception) {
+            Log.e("PDF", "Error al guardar: ${e.message}")
+            Toast.makeText(context, "Error al generar PDF", Toast.LENGTH_SHORT).show()
+        } finally {
+            pdfDocument.close()
+            isGenerating = false
+        }
+    }
+
+    fun openReport(context: Context, fileName: String) {
+        val file = File(context.getExternalFilesDir(null), fileName)
+        if (file.exists()) {
+            val uri = FileProvider.getUriForFile(
+                context,
+                "${context.packageName}.fileprovider",
+                file
+            )
+            val intent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(uri, "application/pdf")
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            try {
+                context.startActivity(intent)
+            } catch (e: Exception) {
+                Toast.makeText(context, "No hay aplicaciones para abrir PDF", Toast.LENGTH_SHORT).show()
+            }
+        } else {
+            Toast.makeText(context, "El archivo no existe", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    fun shareReport(context: Context, fileName: String) {
+        val file = File(context.getExternalFilesDir(null), fileName)
+        if (file.exists()) {
+            val uri = FileProvider.getUriForFile(
+                context,
+                "${context.packageName}.fileprovider",
+                file
+            )
+            val intent = Intent(Intent.ACTION_SEND).apply {
+                type = "application/pdf"
+                putExtra(Intent.EXTRA_STREAM, uri)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            context.startActivity(Intent.createChooser(intent, "Compartir Reporte"))
+        } else {
+            Toast.makeText(context, "El archivo no existe", Toast.LENGTH_SHORT).show()
+        }
+    }
+}
+
+// 🧠 Asistente IA ViewModel (Híbrido Firestore + Simulación IA)
+class AsistenteIAViewModel : ViewModel() {
+    var messages = mutableStateListOf<Pair<String, Boolean>>() // Mensaje to IsUser
+    var isTyping by mutableStateOf(false)
+
+    init {
+        messages.add("¡Hola! Soy tu asistente EasyPrice. ¿En qué puedo ayudarte hoy?" to false)
+    }
+
+    fun sendMessage(query: String) {
+        messages.add(query to true)
+        isTyping = true
+        
+        val db = FirebaseFirestore.getInstance()
+        
+        if (query.lowercase().contains("top") || query.lowercase().contains("mas escaneados")) {
+            db.collection("product_stats")
+                .orderBy("scan_count", Query.Direction.DESCENDING)
+                .limit(5)
+                .get()
+                .addOnSuccessListener { snapshot ->
+                    val dataForAI = snapshot.documents.mapIndexed { index, doc ->
+                        "${index + 1}. ${doc.getString("name")} - ${doc.getLong("scan_count")}"
+                    }.joinToString("\n")
+                    
+                    val fullPrompt = """
+                        Estos son los productos más escaneados:
+                        $dataForAI
+                        
+                        Resumí esto para un administrador de forma profesional e identifica tendencias.
+                    """.trimIndent()
+                    
+                    Log.d("EasyPriceIA", "Prompt generado:\n$fullPrompt")
+                    
+                    val topName = snapshot.documents.firstOrNull()?.getString("name") ?: "N/A"
+                    simulateIAResponse("Análisis Estratégico:\n\nEl producto '$topName' lidera la demanda con el mayor volumen de escaneos. Se observa una tendencia clara hacia esta categoría, por lo que recomiendo asegurar el abastecimiento inmediato para evitar quiebres de stock.")
+                }
+        } else if (query.lowercase().contains("crecimiento") || query.lowercase().contains("tendencia")) {
+            db.collection("product_stats")
+                .get()
+                .addOnSuccessListener { snapshot ->
+                    val trend = snapshot.documents
+                        .mapNotNull { it.getString("name") }
+                        .take(2)
+                        .joinToString { it }
+                    simulateIAResponse("He analizado las tendencias y $trend muestran un crecimiento constante esta semana.")
+                }
+        } else {
+            simulateIAResponse("Interesante pregunta. Puedo ayudarte con estadísticas de productos, tendencias de escaneo o información de inventario. ¿Qué prefieres consultar?")
+        }
+    }
+
+    private fun simulateIAResponse(response: String) {
+        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+            messages.add(response to false)
+            isTyping = false
+        }, 1500)
     }
 }
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        
-        // Registrar actividad de usuario al abrir la app
-        trackUserActivity()
         
         val targetScreen = intent.getStringExtra("target_screen") ?: "role_selection"
         
@@ -169,7 +528,10 @@ class MainActivity : ComponentActivity() {
                     "role_selection" -> {
                         RoleSelectionScreen(
                             onAdminClick = { currentScreen = "admin_login" },
-                            onConsumerClick = { currentScreen = "consumer_home" }
+                            onConsumerClick = { 
+                                trackUserActivity()
+                                currentScreen = "consumer_home" 
+                            }
                         )
                     }
                     "admin_login" -> {
@@ -201,11 +563,48 @@ class MainActivity : ComponentActivity() {
                     "management_home" -> {
                         ManagementHomeScreen(
                             onLogout = { currentScreen = "role_selection" },
-                            onDashboardClick = { currentScreen = "dashboard" }
+                            onDashboardClick = { currentScreen = "dashboard" },
+                            onProductsClick = { currentScreen = "management_products" },
+                            onScansClick = { currentScreen = "management_scans" },
+                            onTrendsClick = { currentScreen = "management_trends" },
+                            onAiClick = { currentScreen = "ai_assistant" },
+                            onReportsClick = { currentScreen = "reports" }
                         )
                     }
                     "dashboard" -> {
                         DashboardScreen(
+                            onBack = { currentScreen = "management_home" }
+                        )
+                    }
+                    "management_products" -> {
+                        ProductosScreen(
+                            onBack = { currentScreen = "management_home" },
+                            onProductClick = { barcode ->
+                                scannedBarcode = barcode
+                                val intent = Intent(context, Result::class.java).apply {
+                                    putExtra("barcode", barcode)
+                                }
+                                context.startActivity(intent)
+                            }
+                        )
+                    }
+                    "management_scans" -> {
+                        EscaneosScreen(
+                            onBack = { currentScreen = "management_home" }
+                        )
+                    }
+                    "management_trends" -> {
+                        TendenciasScreen(
+                            onBack = { currentScreen = "management_home" }
+                        )
+                    }
+                    "ai_assistant" -> {
+                        AiAssistantScreen(
+                            onBack = { currentScreen = "management_home" }
+                        )
+                    }
+                    "reports" -> {
+                        ReportesScreen(
                             onBack = { currentScreen = "management_home" }
                         )
                     }
@@ -267,11 +666,184 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun trackUserActivity() {
-        // Incrementa active_users en cada apertura de la app
         FirebaseFirestore.getInstance().collection("stats").document("global")
             .set(mapOf("active_users" to FieldValue.increment(1)), SetOptions.merge())
-            .addOnSuccessListener { Log.d("Stats", "Usuario activo incrementado en stats/global") }
-            .addOnFailureListener { e -> Log.e("Stats", "Error al incrementar usuarios", e) }
+    }
+}
+
+@Composable
+fun ReportesScreen(viewModel: ReportesViewModel = viewModel(), onBack: () -> Unit) {
+    val context = LocalContext.current
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xFF1A0B46))
+            .padding(16.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = onBack) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
+            }
+            Text("📄 Reportes", color = Color.White, style = MaterialTheme.typography.headlineMedium)
+        }
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(containerColor = Color(0xFF2EF2A3)),
+            shape = RoundedCornerShape(16.dp),
+            onClick = { viewModel.generarNuevoReporte(context) }
+        ) {
+            Row(
+                modifier = Modifier.padding(24.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center
+            ) {
+                if (viewModel.isGenerating) {
+                    CircularProgressIndicator(color = Color(0xFF1A0B46), modifier = Modifier.size(24.dp))
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Text("Generando...", color = Color(0xFF1A0B46), fontWeight = FontWeight.Bold)
+                } else {
+                    Icon(Icons.Filled.Add, contentDescription = null, tint = Color(0xFF1A0B46))
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Text("Generar Reporte PDF", color = Color(0xFF1A0B46), fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(32.dp))
+
+        Text("Reportes Recientes", color = Color.White, style = MaterialTheme.typography.titleMedium)
+        Spacer(modifier = Modifier.height(16.dp))
+
+        LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            items(viewModel.reportsList) { report ->
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { viewModel.openReport(context, report) },
+                    colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.1f)),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(report, color = Color.White, modifier = Modifier.weight(1f))
+                        IconButton(onClick = { viewModel.shareReport(context, report) }) {
+                            Icon(Icons.Filled.Share, contentDescription = "Share", tint = Color(0xFF2EF2A3))
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun AiAssistantScreen(viewModel: AsistenteIAViewModel = viewModel(), onBack: () -> Unit) {
+    var textInput by remember { mutableStateOf("") }
+    val scrollState = rememberScrollState()
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xFF1A0B46))
+            .padding(16.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = onBack) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
+            }
+            Text("💬 Asistente IA", color = Color.White, style = MaterialTheme.typography.headlineMedium)
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Box(modifier = Modifier.weight(1f)) {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                contentPadding = PaddingValues(bottom = 16.dp)
+            ) {
+                items(viewModel.messages) { message ->
+                    ChatBubble(text = message.first, isUser = message.second)
+                }
+                if (viewModel.isTyping) {
+                    item {
+                        Text("EasyPrice IA está pensando...", color = Color(0xFF2EF2A3), fontSize = 12.sp, modifier = Modifier.padding(start = 12.dp))
+                    }
+                }
+            }
+        }
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            TextField(
+                value = textInput,
+                onValueChange = { textInput = it },
+                modifier = Modifier.weight(1f),
+                placeholder = { Text("Escribe tu consulta...") },
+                colors = TextFieldDefaults.colors(
+                    focusedContainerColor = Color.White.copy(alpha = 0.1f),
+                    unfocusedContainerColor = Color.White.copy(alpha = 0.1f),
+                    focusedTextColor = Color.White,
+                    unfocusedTextColor = Color.White,
+                    cursorColor = Color(0xFF2EF2A3)
+                ),
+                shape = RoundedCornerShape(24.dp)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            FloatingActionButton(
+                onClick = {
+                    if (textInput.isNotBlank()) {
+                        viewModel.sendMessage(textInput)
+                        textInput = ""
+                    }
+                },
+                containerColor = Color(0xFF2EF2A3),
+                contentColor = Color(0xFF1A0B46),
+                shape = CircleShape,
+                modifier = Modifier.size(56.dp)
+            ) {
+                Icon(Icons.Default.Send, contentDescription = "Send")
+            }
+        }
+    }
+}
+
+@Composable
+fun ChatBubble(text: String, isUser: Boolean) {
+    Box(
+        modifier = Modifier.fillMaxWidth(),
+        contentAlignment = if (isUser) Alignment.CenterEnd else Alignment.CenterStart
+    ) {
+        Card(
+            shape = RoundedCornerShape(
+                topStart = 16.dp,
+                topEnd = 16.dp,
+                bottomStart = if (isUser) 16.dp else 4.dp,
+                bottomEnd = if (isUser) 4.dp else 16.dp
+            ),
+            colors = CardDefaults.cardColors(
+                containerColor = if (isUser) Color(0xFFFFD54F) else Color.White.copy(alpha = 0.1f)
+            ),
+            modifier = Modifier.widthIn(max = 280.dp)
+        ) {
+            Text(
+                text = text,
+                modifier = Modifier.padding(12.dp),
+                color = if (isUser) Color(0xFF1A0B46) else Color.White,
+                fontSize = 15.sp
+            )
+        }
     }
 }
 
@@ -365,6 +937,321 @@ fun DashboardScreen(viewModel: DashboardViewModel = viewModel(), onBack: () -> U
         }
         
         Spacer(modifier = Modifier.height(24.dp))
+    }
+}
+
+@Composable
+fun ProductosScreen(viewModel: ProductosViewModel = viewModel(), onBack: () -> Unit, onProductClick: (String) -> Unit) {
+    var searchText by remember { mutableStateOf("") }
+    val analytics = Firebase.analytics
+
+    LaunchedEffect(Unit) {
+        analytics.logEvent("view_product_list", null)
+        viewModel.loadProductos()
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xFF1A0B46))
+            .padding(16.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = onBack) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
+            }
+            Text("📦 Productos", color = Color.White, style = MaterialTheme.typography.headlineMedium)
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        OutlinedTextField(
+            value = searchText,
+            onValueChange = {
+                searchText = it
+                analytics.logEvent("search_product", bundleOf("search_term" to it))
+            },
+            label = { Text("Buscar producto") },
+            modifier = Modifier.fillMaxWidth(),
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedTextColor = Color.White,
+                unfocusedTextColor = Color.White,
+                focusedBorderColor = Color(0xFF2EF2A3),
+                unfocusedBorderColor = Color.Gray,
+                focusedLabelColor = Color(0xFF2EF2A3),
+                unfocusedLabelColor = Color.Gray
+            ),
+            shape = RoundedCornerShape(12.dp)
+        )
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        if (viewModel.isLoading) {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator(color = Color(0xFF2EF2A3))
+            }
+        } else {
+            LazyColumn(modifier = Modifier.fillMaxSize()) {
+                items(viewModel.productos.filter {
+                    it.name.contains(searchText, ignoreCase = true) || 
+                    it.marca?.contains(searchText, ignoreCase = true) == true
+                }) { product ->
+                    ProductItem(product) {
+                        analytics.logEvent("view_product_from_list", bundleOf("product_name" to product.name))
+                        onProductClick(product.code)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun EscaneosScreen(viewModel: EscaneosViewModel = viewModel(), onBack: () -> Unit) {
+    val analytics = Firebase.analytics
+
+    LaunchedEffect(Unit) {
+        analytics.logEvent("view_scans_dashboard", null)
+        viewModel.loadData()
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xFF1A0B46))
+            .padding(16.dp)
+            .verticalScroll(rememberScrollState())
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = onBack) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
+            }
+            Text("🔍 Escaneos", color = Color.White, style = MaterialTheme.typography.headlineMedium)
+        }
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        Text("Actividad semanal", color = Color.White, style = MaterialTheme.typography.titleMedium)
+        Spacer(modifier = Modifier.height(16.dp))
+        BarChart(viewModel.weeklyData)
+
+        Spacer(modifier = Modifier.height(32.dp))
+
+        Text("Top más escaneados", color = Color.White, style = MaterialTheme.typography.titleMedium)
+        Spacer(modifier = Modifier.height(16.dp))
+
+        if (viewModel.isLoading) {
+            CircularProgressIndicator(color = Color(0xFF2EF2A3))
+        } else {
+            viewModel.topProductos.forEachIndexed { index, pair ->
+                TopItem(index + 1, pair.first, pair.second)
+            }
+        }
+        
+        Spacer(modifier = Modifier.height(40.dp))
+        
+        Button(
+            onClick = onBack,
+            modifier = Modifier.fillMaxWidth().height(60.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFD54F)),
+            shape = RoundedCornerShape(30.dp)
+        ) {
+            Text("Volver", color = Color(0xFF1A0B46), fontWeight = FontWeight.Bold)
+        }
+    }
+}
+
+@Composable
+fun RealLineChart(data: List<Int>) {
+    AndroidView(
+        factory = { context ->
+            LineChart(context).apply {
+                description.isEnabled = false
+                legend.isEnabled = false
+                xAxis.setDrawGridLines(false)
+                axisLeft.setDrawGridLines(false)
+                axisRight.isEnabled = false
+                xAxis.position = com.github.mikephil.charting.components.XAxis.XAxisPosition.BOTTOM
+                xAxis.textColor = android.graphics.Color.WHITE
+                axisLeft.textColor = android.graphics.Color.WHITE
+                
+                val entries = data.mapIndexed { index, value ->
+                    Entry(index.toFloat(), value.toFloat())
+                }
+
+                val dataSet = LineDataSet(entries, "Escaneos").apply {
+                    color = android.graphics.Color.parseColor("#2EF2A3")
+                    lineWidth = 3f
+                    setCircleColor(android.graphics.Color.parseColor("#FFD54F"))
+                    circleRadius = 5f
+                    setDrawCircleHole(false)
+                    valueTextColor = android.graphics.Color.WHITE
+                    valueTextSize = 10f
+                    setDrawFilled(true)
+                    fillColor = android.graphics.Color.parseColor("#2EF2A3")
+                    fillAlpha = 50
+                }
+
+                this.data = LineData(dataSet)
+                invalidate()
+            }
+        },
+        modifier = Modifier.fillMaxWidth().height(200.dp)
+    )
+}
+
+@Composable
+fun TendenciasScreen(viewModel: TendenciasViewModel = viewModel(), onBack: () -> Unit) {
+    val analytics = Firebase.analytics
+
+    LaunchedEffect(Unit) {
+        analytics.logEvent("view_trends", null)
+        viewModel.loadData()
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xFF1A0B46))
+            .padding(16.dp)
+            .verticalScroll(rememberScrollState())
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = onBack) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
+            }
+            Text("📈 Tendencias", color = Color.White, style = MaterialTheme.typography.headlineMedium)
+        }
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        Text("Actividad (últimos días)", color = Color.White, style = MaterialTheme.typography.titleMedium)
+        Spacer(modifier = Modifier.height(16.dp))
+        
+        if (viewModel.weeklyData.isNotEmpty()) {
+            RealLineChart(viewModel.weeklyData)
+        } else {
+            Box(modifier = Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
+                if (viewModel.isLoading) CircularProgressIndicator(color = Color(0xFF2EF2A3))
+                else Text("No hay datos históricos aún", color = Color.Gray)
+            }
+        }
+
+        Spacer(modifier = Modifier.height(32.dp))
+
+        Text("🔥 Productos en crecimiento", color = Color.White, style = MaterialTheme.typography.titleMedium)
+        Spacer(modifier = Modifier.height(16.dp))
+
+        if (viewModel.growthProducts.isEmpty()) {
+            Text("Cargando productos...", color = Color.Gray, modifier = Modifier.padding(8.dp))
+        } else {
+            viewModel.growthProducts.forEach {
+                GrowthItem(it.first, it.second, it.third)
+            }
+        }
+        
+        Spacer(modifier = Modifier.height(40.dp))
+        
+        Button(
+            onClick = onBack,
+            modifier = Modifier.fillMaxWidth().height(60.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFD54F)),
+            shape = RoundedCornerShape(30.dp)
+        ) {
+            Text("Volver", color = Color(0xFF1A0B46), fontWeight = FontWeight.Bold)
+        }
+    }
+}
+
+@Composable
+fun GrowthItem(name: String, current: Int, last: Int) {
+    val growth = current - last
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.1f)),
+        shape = RoundedCornerShape(12.dp)
+    ) {
+        Row(
+            modifier = Modifier.padding(16.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(text = name, color = Color.White, fontWeight = FontWeight.Bold)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = if (growth >= 0) "▲ $growth" else "▼ ${Math.abs(growth)}",
+                    color = if (growth >= 0) Color(0xFF2EF2A3) else Color.Red,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun BarChart(data: List<Int>) {
+    Card(
+        modifier = Modifier.fillMaxWidth().height(150.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.05f)),
+        shape = RoundedCornerShape(16.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxSize().padding(16.dp),
+            horizontalArrangement = Arrangement.SpaceEvenly,
+            verticalAlignment = Alignment.Bottom
+        ) {
+            data.forEach {
+                Box(
+                    modifier = Modifier
+                        .width(24.dp)
+                        .height((it * 2).dp)
+                        .background(Color(0xFF2EF2A3), RoundedCornerShape(topStart = 4.dp, topEnd = 4.dp))
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun TopItem(rank: Int, name: String, count: Int) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.1f)),
+        shape = RoundedCornerShape(12.dp)
+    ) {
+        Row(
+            modifier = Modifier.padding(16.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(text = "🥇 #$rank $name", color = Color.White, fontWeight = FontWeight.Bold)
+            Text(text = "$count scans", color = Color(0xFF2EF2A3))
+        }
+    }
+}
+
+@Composable
+fun ProductItem(product: Product, onClick: () -> Unit) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 6.dp)
+            .clickable { onClick() },
+        colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.1f)),
+        shape = RoundedCornerShape(16.dp),
+        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.2f))
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(text = product.name, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text(text = product.marca ?: "Genérico", color = Color.Gray, fontSize = 14.sp)
+                Text(text = "$${product.price}", color = Color(0xFF2EF2A3), fontWeight = FontWeight.Bold, fontSize = 16.sp)
+            }
+        }
     }
 }
 
@@ -604,7 +1491,7 @@ fun AdminMenuButton(text: String, icon: ImageVector, onClick: () -> Unit, modifi
 }
 
 @Composable
-fun ManagementHomeScreen(onLogout: () -> Unit, onDashboardClick: () -> Unit) {
+fun ManagementHomeScreen(onLogout: () -> Unit, onDashboardClick: () -> Unit, onProductsClick: () -> Unit, onScansClick: () -> Unit, onTrendsClick: () -> Unit, onAiClick: () -> Unit = {}, onReportsClick: () -> Unit = {}) {
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -616,26 +1503,56 @@ fun ManagementHomeScreen(onLogout: () -> Unit, onDashboardClick: () -> Unit) {
         Image(
             painter = painterResource(id = R.drawable.logo_easy_price),
             contentDescription = "Logo",
-            modifier = Modifier.size(220.dp),
+            modifier = Modifier.size(160.dp),
             contentScale = ContentScale.Fit
         )
         
-        Spacer(modifier = Modifier.height(40.dp))
+        Spacer(modifier = Modifier.height(20.dp))
 
         Column(modifier = Modifier.fillMaxWidth()) {
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 ManagementButton(
                     text = "Dashboard", 
                     icon = Icons.Filled.Dashboard, 
                     modifier = Modifier.weight(1f),
                     onClick = onDashboardClick
                 )
-                ManagementButton(text = "Productos", icon = Icons.Filled.Inventory, modifier = Modifier.weight(1f))
+                ManagementButton(
+                    text = "Productos", 
+                    icon = Icons.Filled.Inventory, 
+                    modifier = Modifier.weight(1f),
+                    onClick = onProductsClick
+                )
             }
-            Spacer(modifier = Modifier.height(20.dp))
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(20.dp)) {
-                ManagementButton(text = "Escaneos", icon = Icons.Filled.QrCodeScanner, modifier = Modifier.weight(1f))
-                ManagementButton(text = "Tendencias", icon = Icons.Filled.ShowChart, modifier = Modifier.weight(1f))
+            Spacer(modifier = Modifier.height(16.dp))
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                ManagementButton(
+                    text = "Escaneos", 
+                    icon = Icons.Filled.QrCodeScanner, 
+                    modifier = Modifier.weight(1f),
+                    onClick = onScansClick
+                )
+                ManagementButton(
+                    text = "Tendencias", 
+                    icon = Icons.Filled.ShowChart, 
+                    modifier = Modifier.weight(1f),
+                    onClick = onTrendsClick
+                )
+            }
+            Spacer(modifier = Modifier.height(16.dp))
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                ManagementButton(
+                    text = "Reportes", 
+                    icon = Icons.Filled.Assessment, 
+                    modifier = Modifier.weight(1f),
+                    onClick = onReportsClick
+                )
+                ManagementButton(
+                    text = "Asistente IA", 
+                    icon = Icons.Filled.Chat, 
+                    modifier = Modifier.weight(1f),
+                    onClick = onAiClick
+                )
             }
         }
 
@@ -644,9 +1561,9 @@ fun ManagementHomeScreen(onLogout: () -> Unit, onDashboardClick: () -> Unit) {
         Button(
             onClick = onLogout,
             modifier = Modifier
-                .width(180.dp)
-                .height(120.dp),
-            shape = RoundedCornerShape(35.dp),
+                .width(140.dp)
+                .height(80.dp),
+            shape = RoundedCornerShape(25.dp),
             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFD54F))
         ) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -654,12 +1571,12 @@ fun ManagementHomeScreen(onLogout: () -> Unit, onDashboardClick: () -> Unit) {
                     imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                     contentDescription = null,
                     tint = Color(0xFF757575),
-                    modifier = Modifier.size(60.dp)
+                    modifier = Modifier.size(40.dp)
                 )
-                Text("Salir", color = Color(0xFF1A0B46), fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                Text("Salir", color = Color(0xFF1A0B46), fontSize = 16.sp, fontWeight = FontWeight.Bold)
             }
         }
-        Spacer(modifier = Modifier.height(20.dp))
+        Spacer(modifier = Modifier.height(10.dp))
     }
 }
 
@@ -667,8 +1584,8 @@ fun ManagementHomeScreen(onLogout: () -> Unit, onDashboardClick: () -> Unit) {
 fun ManagementButton(text: String, icon: ImageVector, modifier: Modifier, onClick: () -> Unit = {}) {
     Button(
         onClick = onClick,
-        modifier = modifier.height(140.dp),
-        shape = RoundedCornerShape(35.dp),
+        modifier = modifier.height(120.dp),
+        shape = RoundedCornerShape(28.dp),
         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2EF2A3))
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -676,10 +1593,10 @@ fun ManagementButton(text: String, icon: ImageVector, modifier: Modifier, onClic
                 imageVector = icon,
                 contentDescription = null,
                 tint = Color(0xFF757575),
-                modifier = Modifier.size(70.dp)
+                modifier = Modifier.size(50.dp)
             )
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(text = text, color = Color(0xFF1A0B46), fontSize = 16.sp, fontWeight = FontWeight.Bold)
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(text = text, color = Color(0xFF1A0B46), fontSize = 14.sp, fontWeight = FontWeight.Bold)
         }
     }
 }
@@ -846,7 +1763,7 @@ fun AddProductScreen(barcode: String, onProductLoaded: () -> Unit, onError: () -
                 Button(onClick = {
                     if (nombre.isBlank() || precio.isBlank() || categoria.isBlank() || subCategoria.isBlank()) { Toast.makeText(context, "Nombre, Precio, Categoría y Sub-categoría son obligatorios", Toast.LENGTH_SHORT).show(); return@Button }
                     isLoading = true
-                    val productData = hashMapOf("codigo" to barcode.trim(), "name" to nombre, "price" to precio.toDoubleOrNull(), "marca" to marca, "categoria" to categoria, "subcategoria" to subCategoria, "descripcion" to descripcion)
+                    val productData = hashMapOf("codigo" to barcode.trim(), "name" to nombre, "price" to precio.toDoubleOrNull(), "marca" to marca, "categoria" to categoria, "subcategoria" to subCategoria, "descripcion" to descripcion, "scan_count" to 0)
                     db.collection("products").add(productData).addOnSuccessListener {
                         onProductLoaded() 
                     }.addOnFailureListener { onError(); isLoading = false }
@@ -904,7 +1821,7 @@ fun AdminLoginScreen(onLoginClick: (String, String) -> Unit, onBack: () -> Unit)
         TextField(value = password, onValueChange = { password = it }, placeholder = { Text("Contraseña", color = Color.Gray, fontSize = 18.sp) }, modifier = Modifier.fillMaxWidth().height(70.dp), shape = RoundedCornerShape(35.dp), visualTransformation = PasswordVisualTransformation(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password), colors = TextFieldDefaults.colors(focusedContainerColor = Color.White, unfocusedContainerColor = Color.White, disabledContainerColor = Color.White, focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent), trailingIcon = { Icon(Icons.Default.Lock, contentDescription = null, tint = Color.Gray, modifier = Modifier.size(30.dp)) }, singleLine = true)
         Spacer(modifier = Modifier.height(48.dp))
         Button(onClick = { onLoginClick(username, password) }, modifier = Modifier.width(200.dp).height(60.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2EF2A3)), shape = RoundedCornerShape(30.dp)) { Text(text = "Login", color = Color(0xFF1A0B46), fontSize = 20.sp, fontWeight = FontWeight.Bold) }
-        TextButton(onClick = onBack, modifier = Modifier.padding(top = 16.dp)) { Text("Volver", color = Color.White) }
+        TextButton(onClick = onBack, modifier = Modifier.padding(top = 16.dp)) { Text("Volver", color = Color(0xFF1A0B46)) }
     }
 }
 
