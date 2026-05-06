@@ -443,41 +443,63 @@ class AsistenteIAViewModel : ViewModel() {
         isTyping = true
         
         val db = FirebaseFirestore.getInstance()
+        val lowerQuery = query.lowercase()
         
-        if (query.lowercase().contains("top") || query.lowercase().contains("mas escaneados")) {
-            db.collection("product_stats")
-                .orderBy("scan_count", Query.Direction.DESCENDING)
-                .limit(5)
-                .get()
-                .addOnSuccessListener { snapshot ->
-                    val dataForAI = snapshot.documents.mapIndexed { index, doc ->
-                        "${index + 1}. ${doc.getString("name")} - ${doc.getLong("scan_count")}"
-                    }.joinToString("\n")
-                    
-                    val fullPrompt = """
-                        Estos son los productos más escaneados:
-                        $dataForAI
-                        
-                        Resumí esto para un administrador de forma profesional e identifica tendencias.
-                    """.trimIndent()
-                    
-                    Log.d("EasyPriceIA", "Prompt generado:\n$fullPrompt")
-                    
-                    val topName = snapshot.documents.firstOrNull()?.getString("name") ?: "N/A"
-                    simulateIAResponse("Análisis Estratégico:\n\nEl producto '$topName' lidera la demanda con el mayor volumen de escaneos. Se observa una tendencia clara hacia esta categoría, por lo que recomiendo asegurar el abastecimiento inmediato para evitar quiebres de stock.")
+        when {
+            lowerQuery.contains("top") || lowerQuery.contains("mas escaneado") -> {
+                db.collection("product_stats")
+                    .orderBy("scan_count", Query.Direction.DESCENDING)
+                    .limit(5)
+                    .get()
+                    .addOnSuccessListener { snapshot ->
+                        val data = snapshot.documents.mapIndexed { i, doc ->
+                            "${i + 1}. ${doc.getString("name")} (${doc.getLong("scan_count")} scans)"
+                        }.joinToString("\n")
+                        simulateIAResponse("Análisis de Demanda:\n\nLos productos más buscados son:\n$data\n\nEl interés se concentra fuertemente en el primer puesto, sugiriendo una alta necesidad inmediata de stock.")
+                    }
+            }
+            lowerQuery.contains("crecimiento") || lowerQuery.contains("tendencia") -> {
+                db.collection("product_stats")
+                    .get()
+                    .addOnSuccessListener { snapshot ->
+                        val trend = snapshot.documents
+                            .mapNotNull { it.getString("name") }
+                            .take(2)
+                            .joinToString { it }
+                        simulateIAResponse("Tendencias Actuales:\n\nSe observa un comportamiento positivo en '$trend'. Estos productos han mantenido un ritmo de escaneo creciente en los últimos días.")
+                    }
+            }
+            lowerQuery.contains("total") && lowerQuery.contains("escaneo") -> {
+                db.collection("stats").document("global").get().addOnSuccessListener { doc ->
+                    val total = doc.getLong("total_scans") ?: 0
+                    simulateIAResponse("Actualmente registramos un total acumulado de $total escaneos en toda la plataforma.")
                 }
-        } else if (query.lowercase().contains("crecimiento") || query.lowercase().contains("tendencia")) {
-            db.collection("product_stats")
-                .get()
-                .addOnSuccessListener { snapshot ->
-                    val trend = snapshot.documents
-                        .mapNotNull { it.getString("name") }
-                        .take(2)
-                        .joinToString { it }
-                    simulateIAResponse("He analizado las tendencias y $trend muestran un crecimiento constante esta semana.")
+            }
+            lowerQuery.contains("usuario") -> {
+                db.collection("stats").document("global").get().addOnSuccessListener { doc ->
+                    val active = doc.getLong("active_users") ?: 0
+                    simulateIAResponse("Contamos con $active usuarios registrados interactuando con la aplicación en este periodo.")
                 }
-        } else {
-            simulateIAResponse("Interesante pregunta. Puedo ayudarte con estadísticas de productos, tendencias de escaneo o información de inventario. ¿Qué prefieres consultar?")
+            }
+            lowerQuery.contains("escaneo") || lowerQuery.contains("cuanto") || lowerQuery.contains("cantidad") -> {
+                db.collection("product_stats").get().addOnSuccessListener { snapshot ->
+                    val foundProduct = snapshot.documents.find { doc ->
+                        val name = doc.getString("name")?.lowercase() ?: ""
+                        name.isNotEmpty() && lowerQuery.contains(name)
+                    }
+                    
+                    if (foundProduct != null) {
+                        val name = foundProduct.getString("name")
+                        val count = foundProduct.getLong("scan_count") ?: 0
+                        simulateIAResponse("El producto '$name' registra un total de $count escaneos. Es uno de los artículos con movimiento constante en la base de datos.")
+                    } else {
+                        simulateIAResponse("Para darte el número exacto de escaneos, por favor indicame el nombre del producto de forma clara.")
+                    }
+                }
+            }
+            else -> {
+                simulateIAResponse("Entiendo. Puedo proporcionarte datos sobre el total de escaneos, usuarios activos, el rendimiento de un producto específico o las tendencias semanales. ¿Qué dato necesitás?")
+            }
         }
     }
 
@@ -1838,7 +1860,19 @@ fun RoleButton(text: String, icon: ImageVector, onClick: () -> Unit) {
 @Composable
 fun MainScreen() {
     val context = LocalContext.current
-    val barcodeLauncher = rememberLauncherForActivityResult(contract = ActivityResultContracts.StartActivityForResult(), onResult = { result -> if (result.resultCode == Activity.RESULT_OK) { val barcode = result.data?.getStringExtra("barcode_result"); val intent = Intent(context, com.example.easyprice.Result::class.java).apply { putExtra("barcode", barcode) }; context.startActivity(intent) } })
+    val barcodeLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult(),
+        onResult = { result ->
+            if (result.resultCode == Activity.RESULT_OK) {
+                val barcode = result.data?.getStringExtra("barcode_result")
+                val intent = Intent(context, com.example.easyprice.Result::class.java).apply {
+                    putExtra("barcode", barcode)
+                    putExtra("is_consumer", true)
+                }
+                context.startActivity(intent)
+            }
+        }
+    )
     Column(modifier = Modifier.fillMaxSize().background(Color(0xFF1E2A35)).padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         Spacer(modifier = Modifier.height(40.dp))
         Image(painter = painterResource(id = R.drawable.logo_easy_price), contentDescription = "Logo Easy Price", modifier = Modifier.size(260.dp))

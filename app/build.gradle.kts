@@ -76,4 +76,8 @@ dependencies {
 
     // ML Kit Barcode Scanning
     implementation("com.google.mlkit:barcode-scanning:17.3.0")
+
+    // Lottie
+    implementation("com.airbnb.android:lottie:6.4.0")
+    implementation("com.airbnb.android:lottie-compose:6.4.0")
 }

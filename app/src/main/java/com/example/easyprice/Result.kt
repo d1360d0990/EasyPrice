@@ -8,28 +8,26 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.easyprice.data.HistoryManager
 import com.example.easyprice.model.Product
 import com.example.easyprice.ui.theme.EasyPriceTheme
+import com.example.easyprice.ui.components.organisms.AdminResultContent
+import com.example.easyprice.ui.components.pages.PantallaScanConsumer
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.SetOptions
@@ -41,6 +39,7 @@ class Result : ComponentActivity() {
         super.onCreate(savedInstanceState)
         val barcode = intent.getStringExtra("barcode")
         val startInEditMode = intent.getBooleanExtra("edit_mode", false)
+        val isConsumer = intent.getBooleanExtra("is_consumer", false)
 
         setContent {
             EasyPriceTheme {
@@ -49,7 +48,6 @@ class Result : ComponentActivity() {
                 var productNotFound by remember { mutableStateOf(false) }
                 var isEditing by remember { mutableStateOf(startInEditMode) }
 
-                // Efecto para realizar la consulta y manejar la navegación
                 LaunchedEffect(barcode) {
                     if (barcode != null) {
                         val db = FirebaseFirestore.getInstance()
@@ -73,7 +71,6 @@ class Result : ComponentActivity() {
                                     )
                                     product = newProduct
                                     
-                                    // Guardar en historial local
                                     val existingIndex = HistoryManager.historyList.indexOfFirst { it.code == newProduct.code }
                                     if (existingIndex != -1) {
                                         HistoryManager.historyList[existingIndex] = newProduct
@@ -81,19 +78,15 @@ class Result : ComponentActivity() {
                                         HistoryManager.historyList.add(newProduct)
                                     }
 
-                                    // 📈 Actualizar estadísticas globales en Firestore
                                     db.collection("stats").document("global")
                                         .set(mapOf("total_scans" to FieldValue.increment(1)), SetOptions.merge())
 
-                                    // 🔥 6. Actualizar datos al escanear (product_stats)
-                                    // Se verifica si existe para inicializar last_week_count si es necesario
                                     db.collection("product_stats").document(productId).get()
                                         .addOnSuccessListener { statDoc ->
                                             val statsData = mutableMapOf<String, Any>(
                                                 "name" to productName,
                                                 "scan_count" to FieldValue.increment(1)
                                             )
-                                            // Si el documento no existe, inicializamos last_week_count en 0
                                             if (!statDoc.exists()) {
                                                 statsData["last_week_count"] = 0
                                             }
@@ -103,7 +96,6 @@ class Result : ComponentActivity() {
                                                 .set(statsData, SetOptions.merge())
                                         }
 
-                                    // 📅 Registrar escaneo por día automáticamente (ID = Fecha actual)
                                     val dateId = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())
                                     db.collection("scans_by_day").document(dateId)
                                         .set(mapOf("count" to FieldValue.increment(1)), SetOptions.merge())
@@ -117,7 +109,6 @@ class Result : ComponentActivity() {
                     }
                 }
 
-                // Navegación como efecto secundario para evitar cierres inesperados durante la composición
                 LaunchedEffect(productNotFound) {
                     if (productNotFound) {
                         val intent = Intent(context, NotFound::class.java)
@@ -162,7 +153,6 @@ class Result : ComponentActivity() {
                                             db.collection("products").document(docId).delete()
                                                 .addOnSuccessListener {
                                                     Toast.makeText(context, "Producto eliminado", Toast.LENGTH_SHORT).show()
-                                                    
                                                     val intent = Intent(context, MainActivity::class.java).apply {
                                                         flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
                                                         putExtra("target_screen", "admin_home")
@@ -181,8 +171,19 @@ class Result : ComponentActivity() {
                                 }
                             }
                         )
+                    } else if (isConsumer) {
+                        PantallaScanConsumer(
+                            product = product!!,
+                            onHistoryClick = {
+                                context.startActivity(Intent(context, HistoryActivity::class.java))
+                            },
+                            onFavoritesClick = {
+                                context.startActivity(Intent(context, FavoritesActivity::class.java))
+                            },
+                            onBack = { (context as? Activity)?.finish() }
+                        )
                     } else {
-                        ResultScreen(
+                        AdminResultContent(
                             product = product!!,
                             onEditClick = { isEditing = true },
                             onDeleteClick = {
@@ -194,7 +195,6 @@ class Result : ComponentActivity() {
                                             db.collection("products").document(docId).delete()
                                                 .addOnSuccessListener {
                                                     Toast.makeText(context, "Producto eliminado", Toast.LENGTH_SHORT).show()
-                                                    
                                                     val intent = Intent(context, MainActivity::class.java).apply {
                                                         flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
                                                         putExtra("target_screen", "admin_home")
@@ -205,108 +205,15 @@ class Result : ComponentActivity() {
                                         }
                                     }
                             },
-                            onBack = {
-                                (context as? Activity)?.finish()
-                            }
+                            onBack = { (context as? Activity)?.finish() }
                         )
                     }
                 } else {
-                    // Pantalla de carga mientras se obtiene el producto
                     Box(modifier = Modifier.fillMaxSize().background(Color(0xFF1E2A35)), contentAlignment = Alignment.Center) {
                         CircularProgressIndicator(color = Color(0xFF00E5FF))
                     }
                 }
             }
-        }
-    }
-}
-
-@Composable
-fun ResultScreen(
-    product: Product,
-    onEditClick: () -> Unit,
-    onDeleteClick: () -> Unit,
-    onBack: () -> Unit
-) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color(0xFF1E2A35))
-            .padding(16.dp)
-            .verticalScroll(rememberScrollState()),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Spacer(modifier = Modifier.height(24.dp))
-
-        Image(
-            painter = painterResource(id = R.drawable.logo_easy_price),
-            contentDescription = "Logo",
-            modifier = Modifier.size(180.dp).padding(bottom = 16.dp),
-            contentScale = ContentScale.Fit
-        )
-
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(28.dp),
-            colors = CardDefaults.cardColors(containerColor = Color.White),
-            elevation = CardDefaults.cardElevation(8.dp)
-        ) {
-            Column(
-                modifier = Modifier.padding(24.dp),
-                horizontalAlignment = Alignment.Start
-            ) {
-                Text(
-                    "Resultado de Escaneo",
-                    fontSize = 22.sp,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
-                    textAlign = TextAlign.Center
-                )
-
-                ResultField("Código", product.code)
-                ResultField("Nombre", product.name)
-                ResultField("Marca", product.marca ?: "")
-                ResultField("Precio", "$${product.price}")
-                ResultField("Categoría", product.categoria ?: "")
-                ResultField("Sub-categoría", product.subcategoria ?: "")
-                ResultField("Descripción", product.description)
-
-                Spacer(modifier = Modifier.height(32.dp))
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    Button(
-                        onClick = onEditClick,
-                        modifier = Modifier.weight(1f).height(55.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00E5FF)),
-                        shape = RoundedCornerShape(28.dp)
-                    ) {
-                        Text("Editar", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 18.sp)
-                    }
-
-                    Button(
-                        onClick = onDeleteClick,
-                        modifier = Modifier.weight(1f).height(55.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = Color.Red),
-                        shape = RoundedCornerShape(28.dp)
-                    ) {
-                        Text("Eliminar", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 18.sp)
-                    }
-                }
-            }
-        }
-
-        Spacer(modifier = Modifier.height(32.dp))
-
-        Button(
-            onClick = onBack,
-            modifier = Modifier.fillMaxWidth(0.7f).height(55.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF69F0AE)),
-            shape = RoundedCornerShape(14.dp)
-        ) {
-            Text("Volver al Inicio", color = Color.Black, fontWeight = FontWeight.Bold)
         }
     }
 }
@@ -361,10 +268,9 @@ fun EditProductScreen(
                 Spacer(modifier = Modifier.height(16.dp))
                 
                 OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Nombre") }, modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(value = price, onValueChange = { price = it }, label = { Text("Precio") }, modifier = Modifier.fillMaxWidth(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
+                OutlinedTextField(value = price, onValueChange = { price = it }, label = { Text("Precio") }, modifier = Modifier.fillMaxWidth(), keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number))
                 OutlinedTextField(value = marca, onValueChange = { marca = it }, label = { Text("Marca") }, modifier = Modifier.fillMaxWidth())
                 
-                // Dropdown Categoría
                 Text("Categoría:", fontWeight = FontWeight.Bold, fontSize = 14.sp, modifier = Modifier.padding(top = 8.dp))
                 ExposedDropdownMenuBox(
                     expanded = expandedCategory,
@@ -395,7 +301,6 @@ fun EditProductScreen(
                     }
                 }
 
-                // Dropdown Sub-categoría
                 Text("Sub-categoría:", fontWeight = FontWeight.Bold, fontSize = 14.sp, modifier = Modifier.padding(top = 8.dp))
                 ExposedDropdownMenuBox(
                     expanded = expandedSubCategory,
@@ -459,16 +364,5 @@ fun EditProductScreen(
                 }
             }
         }
-    }
-}
-
-@Composable
-fun ResultField(label: String, value: String) {
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text("$label: ", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Color.Black)
-        Text(value, fontSize = 16.sp, color = Color.DarkGray)
     }
 }
