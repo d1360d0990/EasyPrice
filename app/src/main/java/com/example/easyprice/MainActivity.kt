@@ -45,6 +45,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -297,7 +298,8 @@ class MainActivity : ComponentActivity() {
                     "consumer_home" -> MainScreen(
                         isWide = isWide,
                         onFavoritesClick = { context.startActivity(Intent(context, FavoritesActivity::class.java)) },
-                        onHistoryClick = { context.startActivity(Intent(context, HistoryActivity::class.java)) }
+                        onHistoryClick = { context.startActivity(Intent(context, HistoryActivity::class.java)) },
+                        onLogout = { currentScreen = "role_selection" }
                     )
                     "admin_home" -> AdminHomeScreen(
                         isWide = isWide,
@@ -354,7 +356,7 @@ class MainActivity : ComponentActivity() {
 // --- Composables ---
 
 @Composable
-fun MainScreen(isWide: Boolean, onFavoritesClick: () -> Unit, onHistoryClick: () -> Unit) {
+fun MainScreen(isWide: Boolean, onFavoritesClick: () -> Unit, onHistoryClick: () -> Unit, onLogout: () -> Unit) {
     val context = LocalContext.current
     val barcodeLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { res ->
         if (res.resultCode == Activity.RESULT_OK) {
@@ -363,38 +365,116 @@ fun MainScreen(isWide: Boolean, onFavoritesClick: () -> Unit, onHistoryClick: ()
         }
     }
     
-    if (isWide) {
-        Row(modifier = Modifier.fillMaxSize().background(Color(0xFF1E2A35)).padding(32.dp), verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
-                Image(painterResource(R.drawable.logo_easy_price), null, Modifier.size(250.dp))
-            }
-            Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
-                Button(onClick = { barcodeLauncher.launch(Intent(context, ScannerActivity::class.java)) }, modifier = Modifier.fillMaxWidth().height(80.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF4C430))) { Text("Escanear Código", color = Color.Black, fontSize = 20.sp) }
-                Spacer(Modifier.height(32.dp))
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                    BottomNavButton("Historial", R.drawable.ic_list, onHistoryClick)
-                    BottomNavButton("Favoritos", R.drawable.ic_star_outline, onFavoritesClick)
+    val bgColor = Color(0xFF1A0B46)
+    val buttonColor = Color(0xFFFFD54F) 
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(bgColor)
+            .padding(24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.SpaceBetween
+    ) {
+        // Logo
+        Image(
+            painter = painterResource(R.drawable.logo_easy_price),
+            contentDescription = null,
+            modifier = Modifier.size(if (isWide) 320.dp else 250.dp).padding(top = 16.dp)
+        )
+
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.fillMaxWidth(if (isWide) 0.7f else 1f)
+        ) {
+            // Main Scan Button
+            Button(
+                onClick = { barcodeLauncher.launch(Intent(context, ScannerActivity::class.java)) },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(100.dp),
+                shape = RoundedCornerShape(28.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = buttonColor)
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Start,
+                    modifier = Modifier.fillMaxWidth().padding(start = 16.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.PhotoCamera,
+                        contentDescription = null,
+                        tint = Color.Black,
+                        modifier = Modifier.size(56.dp)
+                    )
+                    Spacer(Modifier.width(20.dp))
+                    Text(
+                        "Escanear Código",
+                        color = Color.Black,
+                        fontSize = 22.sp,
+                        fontWeight = FontWeight.Bold
+                    )
                 }
             }
-        }
-    } else {
-        Column(modifier = Modifier.fillMaxSize().background(Color(0xFF1E2A35)).padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+
             Spacer(Modifier.height(40.dp))
-            Image(painterResource(R.drawable.logo_easy_price), null, Modifier.size(200.dp))
-            Button(onClick = { barcodeLauncher.launch(Intent(context, ScannerActivity::class.java)) }, modifier = Modifier.fillMaxWidth().height(60.dp).padding(top = 32.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF4C430))) { Text("Escanear Código", color = Color.Black) }
-            Spacer(Modifier.weight(1f))
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceAround) {
-                BottomNavButton("Historial", R.drawable.ic_list, onHistoryClick)
-                BottomNavButton("Favoritos", R.drawable.ic_star_outline, onFavoritesClick)
+
+            // History and Favorites Row
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(20.dp)
+            ) {
+                ConsumerSquareButton(
+                    text = "Historial",
+                    icon = Icons.Default.FormatListBulleted,
+                    onClick = onHistoryClick,
+                    modifier = Modifier.weight(1f)
+                )
+                ConsumerSquareButton(
+                    text = "Favoritos",
+                    icon = Icons.Default.StarBorder,
+                    onClick = onFavoritesClick,
+                    modifier = Modifier.weight(1f)
+                )
             }
         }
+
+        // Exit Button at the bottom
+        Button(
+            onClick = onLogout,
+            modifier = Modifier
+                .width(180.dp)
+                .height(90.dp),
+            shape = RoundedCornerShape(28.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = buttonColor)
+        ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                    contentDescription = null,
+                    tint = Color.Black,
+                    modifier = Modifier.size(40.dp)
+                )
+                Text("Salir", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+            }
+        }
+        Spacer(Modifier.height(8.dp))
     }
 }
 
 @Composable
-fun BottomNavButton(text: String, iconRes: Int, onClick: () -> Unit) {
-    Button(onClick = onClick, modifier = Modifier.width(150.dp).height(80.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF4C430))) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) { Icon(painterResource(iconRes), null, tint = Color.Black); Text(text, color = Color.Black, fontSize = 12.sp) }
+fun ConsumerSquareButton(text: String, icon: ImageVector, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    Button(
+        onClick = onClick,
+        modifier = modifier.height(110.dp),
+        shape = RoundedCornerShape(28.dp),
+        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFD54F))
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+            Icon(icon, null, tint = Color.Black, modifier = Modifier.size(45.dp))
+            Spacer(Modifier.height(8.dp))
+            Text(text, color = Color.Black, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+        }
     }
 }
 
@@ -426,17 +506,53 @@ fun RoleButton(text: String, icon: ImageVector, onClick: () -> Unit) {
 fun AdminLoginScreen(isWide: Boolean, onLoginClick: (String, String) -> Unit, onBack: () -> Unit) {
     var user by remember { mutableStateOf("") }
     var pass by remember { mutableStateOf("") }
+    var passwordVisible by remember { mutableStateOf(false) }
     
     val content = @Composable {
         Column(Modifier.fillMaxWidth(if (isWide) 0.5f else 1f), horizontalAlignment = Alignment.CenterHorizontally) {
-            TextField(user, { user = it }, label = { Text("Usuario") }, modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(
+                value = user,
+                onValueChange = { user = it },
+                label = { Text("Usuario", color = Color.White) },
+                modifier = Modifier.fillMaxWidth(),
+                leadingIcon = { Icon(Icons.Default.Person, contentDescription = "Usuario", tint = Color.White) },
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedTextColor = Color.White,
+                    unfocusedTextColor = Color.White,
+                    focusedBorderColor = Color(0xFF2EF2A3),
+                    unfocusedBorderColor = Color.White.copy(alpha = 0.5f)
+                ),
+                singleLine = true
+            )
             Spacer(Modifier.height(16.dp))
-            TextField(pass, { pass = it }, label = { Text("Contraseña") }, visualTransformation = PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(
+                value = pass,
+                onValueChange = { pass = it },
+                label = { Text("Contraseña", color = Color.White) },
+                visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                modifier = Modifier.fillMaxWidth(),
+                leadingIcon = { Icon(Icons.Default.Lock, contentDescription = "Contraseña", tint = Color.White) },
+                trailingIcon = {
+                    val icon = if (passwordVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff
+                    val description = if (passwordVisible) "Ocultar contraseña" else "Mostrar contraseña"
+                    IconButton(onClick = { passwordVisible = !passwordVisible }) {
+                        Icon(imageVector = icon, contentDescription = description, tint = Color.White)
+                    }
+                },
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedTextColor = Color.White,
+                    unfocusedTextColor = Color.White,
+                    focusedBorderColor = Color(0xFF2EF2A3),
+                    unfocusedBorderColor = Color.White.copy(alpha = 0.5f)
+                ),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                singleLine = true
+            )
             Spacer(Modifier.height(32.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
-                Button(onClick = { onLoginClick(user, pass) }, modifier = Modifier.weight(1f).height(55.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2EF2A3))) { Text("Login", color = Color.Black) }
+                Button(onClick = { onLoginClick(user, pass) }, modifier = Modifier.weight(1f).height(55.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2EF2A3))) { Text("Login", color = Color.Black, fontWeight = FontWeight.Bold) }
                 Spacer(Modifier.width(12.dp))
-                Button(onClick = onBack, modifier = Modifier.weight(1f).height(55.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFD54F))) { Text("Salir", color = Color.Black) }
+                Button(onClick = onBack, modifier = Modifier.weight(1f).height(55.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFD54F))) { Text("Salir", color = Color.Black, fontWeight = FontWeight.Bold) }
             }
         }
     }
@@ -485,38 +601,84 @@ fun AdminMenuButton(text: String, icon: ImageVector, onClick: () -> Unit, modifi
 
 @Composable
 fun ManagementHomeScreen(isWide: Boolean, onLogout: () -> Unit, onDashboardClick: () -> Unit, onProductsClick: () -> Unit, onScansClick: () -> Unit, onTrendsClick: () -> Unit, onAiClick: () -> Unit, onReportsClick: () -> Unit) {
-    Column(Modifier.fillMaxSize().background(Color(0xFF1A0B46)).padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        Image(painterResource(R.drawable.logo_easy_price), null, Modifier.size(100.dp))
+    val bgColor = Color(0xFF1A0B46)
+    val exitButtonColor = Color(0xFFFFD54F)
+    
+    Column(
+        Modifier
+            .fillMaxSize()
+            .background(bgColor)
+            .padding(24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        // Logo
+        Image(
+            painter = painterResource(R.drawable.logo_easy_price),
+            contentDescription = null,
+            modifier = Modifier.size(if (isWide) 160.dp else 140.dp).padding(top = 8.dp)
+        )
+        
+        Spacer(Modifier.height(12.dp))
         
         val buttons = listOf(
             Triple("Dashboard", Icons.Filled.Dashboard, onDashboardClick),
-            Triple("Productos", Icons.Filled.Inventory, onProductsClick),
+            Triple("Productos", Icons.Filled.Inventory2, onProductsClick),
             Triple("Escaneos", Icons.Filled.QrCodeScanner, onScansClick),
-            Triple("Tendencias", Icons.AutoMirrored.Filled.ShowChart, onTrendsClick),
-            Triple("Reportes", Icons.Filled.Assessment, onReportsClick),
+            Triple("Tendencias", Icons.Filled.TrendingUp, onTrendsClick),
+            Triple("Reportes", Icons.Filled.BarChart, onReportsClick),
             Triple("Asistente IA", Icons.AutoMirrored.Filled.Chat, onAiClick)
         )
 
         LazyVerticalGrid(
             columns = GridCells.Fixed(if (isWide) 3 else 2),
-            modifier = Modifier.weight(1f).padding(top = 24.dp),
-            contentPadding = PaddingValues(8.dp),
+            modifier = Modifier.weight(1f),
+            contentPadding = PaddingValues(horizontal = 8.dp),
             horizontalArrangement = Arrangement.spacedBy(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             items(buttons) { (text, icon, onClick) ->
-                ManagementButton(text, icon, Modifier.fillMaxWidth(), onClick)
+                ManagementButton(text, icon, onClick)
             }
         }
         
-        Button(onClick = onLogout, colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFD54F)), modifier = Modifier.padding(top = 16.dp)) { Text("Cerrar Sesión", color = Color.Black) }
+        Spacer(Modifier.height(16.dp))
+        
+        // Exit Button
+        Button(
+            onClick = onLogout,
+            modifier = Modifier
+                .width(180.dp)
+                .height(110.dp),
+            shape = RoundedCornerShape(28.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = exitButtonColor)
+        ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                    contentDescription = null,
+                    tint = Color.Black,
+                    modifier = Modifier.size(48.dp)
+                )
+                Text("Salir", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+            }
+        }
+        Spacer(Modifier.height(8.dp))
     }
 }
 
 @Composable
-fun ManagementButton(text: String, icon: ImageVector, modifier: Modifier, onClick: () -> Unit) {
-    Button(onClick = onClick, modifier = modifier.height(100.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2EF2A3))) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) { Icon(icon, null, tint = Color.Black); Text(text, color = Color.Black, fontSize = 12.sp) }
+fun ManagementButton(text: String, icon: ImageVector, onClick: () -> Unit) {
+    Button(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth().height(140.dp),
+        shape = RoundedCornerShape(32.dp),
+        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2EF2A3))
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+            Icon(icon, null, tint = Color(0xFF555555), modifier = Modifier.size(56.dp))
+            Spacer(Modifier.height(4.dp))
+            Text(text, color = Color.Black, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+        }
     }
 }
 
@@ -628,8 +790,8 @@ fun BarChart(d: List<Int>) {
 
 @Composable
 fun TopItem(r: Int, n: String, c: Int) {
-    Card(Modifier.fillMaxWidth().padding(vertical = 4.dp), colors = CardDefaults.cardColors(containerColor = Color.White.copy(0.1f))) {
-        Row(Modifier.padding(16.dp), horizontalArrangement = Arrangement.SpaceBetween) { Text("#$r $n", color = Color.White); Text("$c scans", color = Color(0xFF2EF2A3)) }
+    Card(Modifier.fillMaxWidth().padding(vertical = 4.dp), colors = CardDefaults.cardColors(containerColor = Color(0xFF2EF2A3))) {
+        Row(Modifier.padding(16.dp), horizontalArrangement = Arrangement.SpaceBetween) { Text("#$r $n", color = Color.Black); Text("$c scans", color = Color(0xFF2EF2A3)) }
     }
 }
 
