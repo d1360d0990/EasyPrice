@@ -7,31 +7,18 @@ import androidx.activity.compose.setContent
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.material3.*
+import androidx.compose.material3.windowsizeclass.ExperimentalMaterial3WindowSizeClassApi
+import androidx.compose.material3.windowsizeclass.WindowWidthSizeClass
+import androidx.compose.material3.windowsizeclass.calculateWindowSizeClass
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -44,18 +31,24 @@ import androidx.compose.ui.unit.sp
 import com.example.easyprice.data.FavoritesManager
 import com.example.easyprice.data.HistoryManager
 import com.example.easyprice.model.Product
+import com.example.easyprice.ui.theme.EasyPriceTheme
 
 class HistoryActivity : ComponentActivity() {
+    @OptIn(ExperimentalMaterial3WindowSizeClassApi::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
-            HistoryScreen()
+            val windowSizeClass = calculateWindowSizeClass(this)
+            val isWide = windowSizeClass.widthSizeClass != WindowWidthSizeClass.Compact
+            EasyPriceTheme {
+                HistoryScreen(isWide)
+            }
         }
     }
 }
 
 @Composable
-fun HistoryScreen() {
+fun HistoryScreen(isWide: Boolean = false) {
     val context = LocalContext.current
 
     Column(
@@ -68,12 +61,12 @@ fun HistoryScreen() {
         Image(
             painter = painterResource(id = R.drawable.logo_easy_price),
             contentDescription = "Logo Easy Price",
-            modifier = Modifier.size(160.dp)
+            modifier = Modifier.size(if (isWide) 120.dp else 160.dp)
         )
         Spacer(modifier = Modifier.height(16.dp))
         Row(
             modifier = Modifier
-                .fillMaxWidth()
+                .fillMaxWidth(if (isWide) 0.7f else 1f)
                 .background(Color(0xFF2C3E50), shape = RoundedCornerShape(8.dp))
                 .padding(8.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -82,31 +75,44 @@ fun HistoryScreen() {
             IconButton(onClick = { /* TODO: Handle previous */ }) {
                 Icon(painter = painterResource(id = R.drawable.ic_chevron_left), contentDescription = "Previous", tint = Color.White)
             }
-            Text(text = "Historial de Busqueda", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+            Text(text = "Historial de Búsqueda", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
             IconButton(onClick = { /* TODO: Handle next */ }) {
                 Icon(painter = painterResource(id = R.drawable.ic_chevron_right), contentDescription = "Next", tint = Color.White)
             }
         }
         Spacer(modifier = Modifier.height(16.dp))
         Card(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth(if (isWide) 0.8f else 1f).weight(1f),
             shape = RoundedCornerShape(20.dp),
             colors = CardDefaults.cardColors(containerColor = Color.White),
         ) {
-            LazyColumn(modifier = Modifier.padding(16.dp)) {
-                items(HistoryManager.historyList) {
-                    HistoryItem(product = it)
+            if (isWide) {
+                LazyVerticalGrid(
+                    columns = GridCells.Fixed(2),
+                    modifier = Modifier.padding(16.dp),
+                    contentPadding = PaddingValues(8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    items(HistoryManager.historyList) {
+                        HistoryItem(product = it)
+                    }
+                }
+            } else {
+                LazyColumn(modifier = Modifier.padding(16.dp)) {
+                    items(HistoryManager.historyList) {
+                        HistoryItem(product = it)
+                    }
                 }
             }
         }
-        Spacer(modifier = Modifier.weight(1f))
+        Spacer(modifier = Modifier.height(16.dp))
         Button(
             onClick = { 
                 val intent = Intent(context, MainActivity::class.java)
                 context.startActivity(intent)
              },
             modifier = Modifier
-                .fillMaxWidth()
+                .fillMaxWidth(if (isWide) 0.4f else 1f)
                 .height(55.dp),
             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2ECC71)),
             shape = RoundedCornerShape(16.dp)
@@ -121,39 +127,51 @@ fun HistoryItem(product: Product) {
     val context = LocalContext.current
     var isFavorite by remember { mutableStateOf(FavoritesManager.favorites.contains(product)) }
 
-    Row(
+    Card(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable { // <-- Se hace clicable el elemento
+            .padding(vertical = 4.dp)
+            .clickable { 
                 val intent = Intent(context, Result::class.java).apply {
-                    putExtra("barcode", product.code) // <-- Se pasa el código de barras
+                    putExtra("barcode", product.code)
                 }
                 context.startActivity(intent)
-            }
-            .padding(vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween
+            },
+        colors = CardDefaults.cardColors(containerColor = Color.White.copy(0.9f)),
+        elevation = CardDefaults.cardElevation(2.dp)
     ) {
-        Text(text = product.name, fontSize = 16.sp)
-        IconButton(onClick = { 
-            if (isFavorite) {
-                FavoritesManager.remove(product)
-            } else {
-                FavoritesManager.add(product)
+        Row(
+            modifier = Modifier.padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text(text = product.name, fontSize = 16.sp, modifier = Modifier.weight(1f))
+            IconButton(onClick = { 
+                if (isFavorite) {
+                    FavoritesManager.remove(product)
+                } else {
+                    FavoritesManager.add(product)
+                }
+                isFavorite = !isFavorite
+            }) {
+                Icon(
+                    painter = painterResource(id = if (isFavorite) R.drawable.ic_star else R.drawable.ic_star_outline),
+                    contentDescription = "Favorite",
+                    tint = if (isFavorite) Color(0xFFF4C430) else Color.Gray
+                )
             }
-            isFavorite = !isFavorite
-        }) {
-            Icon(
-                painter = painterResource(id = if (isFavorite) R.drawable.ic_star else R.drawable.ic_star_outline),
-                contentDescription = "Favorite",
-                tint = if (isFavorite) Color.Yellow else Color.Gray
-            )
         }
     }
+}
+
+@Preview(showBackground = true, widthDp = 800)
+@Composable
+fun HistoryScreenWidePreview() {
+    HistoryScreen(isWide = true)
 }
 
 @Preview(showBackground = true)
 @Composable
 fun HistoryScreenPreview() {
-    HistoryScreen()
+    HistoryScreen(isWide = false)
 }

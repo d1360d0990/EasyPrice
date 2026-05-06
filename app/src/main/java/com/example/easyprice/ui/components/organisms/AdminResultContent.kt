@@ -20,6 +20,7 @@ import com.example.easyprice.ui.components.atoms.ResultField
 
 @Composable
 fun AdminResultContent(
+    isWide: Boolean = false,
     product: Product,
     onEditClick: () -> Unit,
     onDeleteClick: () -> Unit,
@@ -35,10 +36,10 @@ fun AdminResultContent(
     ) {
         Spacer(modifier = Modifier.height(24.dp))
 
-        LogoImage()
+        LogoImage(size = if (isWide) 120.dp else 200.dp)
 
         Card(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth(if (isWide) 0.7f else 1f),
             shape = RoundedCornerShape(28.dp),
             colors = CardDefaults.cardColors(containerColor = Color.White),
             elevation = CardDefaults.cardElevation(8.dp)
@@ -55,13 +56,29 @@ fun AdminResultContent(
                     textAlign = TextAlign.Center
                 )
 
-                ResultField("Código", product.code)
-                ResultField("Nombre", product.name)
-                ResultField("Marca", product.marca ?: "")
-                ResultField("Precio", "$${product.price}")
-                ResultField("Categoría", product.categoria ?: "")
-                ResultField("Sub-categoría", product.subcategoria ?: "")
-                ResultField("Descripción", product.description)
+                if (isWide) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+                        Column(Modifier.weight(1f)) {
+                            ResultField("Código", product.code)
+                            ResultField("Nombre", product.name)
+                            ResultField("Marca", product.marca ?: "")
+                            ResultField("Precio", "$${product.price}")
+                        }
+                        Column(Modifier.weight(1f)) {
+                            ResultField("Categoría", product.categoria ?: "")
+                            ResultField("Sub-categoría", product.subcategoria ?: "")
+                            ResultField("Descripción", product.description)
+                        }
+                    }
+                } else {
+                    ResultField("Código", product.code)
+                    ResultField("Nombre", product.name)
+                    ResultField("Marca", product.marca ?: "")
+                    ResultField("Precio", "$${product.price}")
+                    ResultField("Categoría", product.categoria ?: "")
+                    ResultField("Sub-categoría", product.subcategoria ?: "")
+                    ResultField("Descripción", product.description)
+                }
 
                 Spacer(modifier = Modifier.height(32.dp))
 
@@ -94,7 +111,7 @@ fun AdminResultContent(
 
         Button(
             onClick = onBack,
-            modifier = Modifier.fillMaxWidth(0.7f).height(55.dp),
+            modifier = Modifier.fillMaxWidth(if (isWide) 0.4f else 0.7f).height(55.dp),
             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF69F0AE)),
             shape = RoundedCornerShape(14.dp)
         ) {

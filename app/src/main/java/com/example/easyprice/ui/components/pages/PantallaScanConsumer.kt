@@ -28,6 +28,7 @@ import com.example.easyprice.ui.components.atoms.LogoImage
 
 @Composable
 fun PantallaScanConsumer(
+    isWide: Boolean = false,
     product: Product,
     onHistoryClick: () -> Unit,
     onFavoritesClick: () -> Unit,
@@ -45,10 +46,10 @@ fun PantallaScanConsumer(
     ) {
         Spacer(modifier = Modifier.height(24.dp))
 
-        LogoImage(size = 220.dp)
+        LogoImage(size = if (isWide) 120.dp else 220.dp)
 
         Card(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth(if (isWide) 0.7f else 1f),
             shape = RoundedCornerShape(28.dp),
             colors = CardDefaults.cardColors(containerColor = Color.White),
             elevation = CardDefaults.cardElevation(8.dp)
@@ -67,29 +68,54 @@ fun PantallaScanConsumer(
                     color = Color.Black
                 )
 
-                ConsumerDataField("Nombre", product.name)
-                ConsumerDataField("Código", product.code)
-                ConsumerDataField("Precio", "$ ${product.price.toInt()}")
+                if (isWide) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+                        Column(Modifier.weight(1f)) {
+                            ConsumerDataField("Nombre", product.name)
+                            ConsumerDataField("Código", product.code)
+                            ConsumerDataField("Precio", "$ ${product.price.toInt()}")
+                        }
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                text = "Descripción:",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 18.sp,
+                                textDecoration = TextDecoration.Underline,
+                                color = Color.Black
+                            )
+                            Text(
+                                text = product.description,
+                                fontSize = 16.sp,
+                                color = Color.Black,
+                                textDecoration = TextDecoration.Underline,
+                                modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
+                            )
+                        }
+                    }
+                } else {
+                    ConsumerDataField("Nombre", product.name)
+                    ConsumerDataField("Código", product.code)
+                    ConsumerDataField("Precio", "$ ${product.price.toInt()}")
 
-                Spacer(modifier = Modifier.height(16.dp))
+                    Spacer(modifier = Modifier.height(16.dp))
 
-                Text(
-                    text = "Descripción:",
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 18.sp,
-                    textDecoration = TextDecoration.Underline,
-                    color = Color.Black
-                )
-                
-                Text(
-                    text = product.description,
-                    fontSize = 16.sp,
-                    color = Color.Black,
-                    textDecoration = TextDecoration.Underline,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 4.dp, bottom = 24.dp)
-                )
+                    Text(
+                        text = "Descripción:",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 18.sp,
+                        textDecoration = TextDecoration.Underline,
+                        color = Color.Black
+                    )
+                    Text(
+                        text = product.description,
+                        fontSize = 16.sp,
+                        color = Color.Black,
+                        textDecoration = TextDecoration.Underline,
+                        modifier = Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 24.dp)
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(24.dp))
 
                 Button(
                     onClick = {
@@ -146,7 +172,7 @@ fun PantallaScanConsumer(
 
         Button(
             onClick = onBack,
-            modifier = Modifier.fillMaxWidth(0.8f).height(55.dp),
+            modifier = Modifier.fillMaxWidth(if (isWide) 0.4f else 0.8f).height(55.dp),
             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF59E689)),
             shape = RoundedCornerShape(16.dp)
         ) {

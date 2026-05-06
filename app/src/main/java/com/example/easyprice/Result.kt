@@ -13,6 +13,9 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
+import androidx.compose.material3.windowsizeclass.ExperimentalMaterial3WindowSizeClassApi
+import androidx.compose.material3.windowsizeclass.WindowWidthSizeClass
+import androidx.compose.material3.windowsizeclass.calculateWindowSizeClass
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -35,6 +38,7 @@ import java.text.SimpleDateFormat
 import java.util.*
 
 class Result : ComponentActivity() {
+    @OptIn(ExperimentalMaterial3WindowSizeClassApi::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val barcode = intent.getStringExtra("barcode")
@@ -42,6 +46,9 @@ class Result : ComponentActivity() {
         val isConsumer = intent.getBooleanExtra("is_consumer", false)
 
         setContent {
+            val windowSizeClass = calculateWindowSizeClass(this)
+            val isWide = windowSizeClass.widthSizeClass != WindowWidthSizeClass.Compact
+
             EasyPriceTheme {
                 val context = LocalContext.current
                 var product by remember { mutableStateOf<Product?>(null) }
@@ -120,6 +127,7 @@ class Result : ComponentActivity() {
                 if (product != null) {
                     if (isEditing) {
                         EditProductScreen(
+                            isWide = isWide,
                             product = product!!,
                             onSave = { updatedProduct ->
                                 val db = FirebaseFirestore.getInstance()
@@ -173,6 +181,7 @@ class Result : ComponentActivity() {
                         )
                     } else if (isConsumer) {
                         PantallaScanConsumer(
+                            isWide = isWide,
                             product = product!!,
                             onHistoryClick = {
                                 context.startActivity(Intent(context, HistoryActivity::class.java))
@@ -184,6 +193,7 @@ class Result : ComponentActivity() {
                         )
                     } else {
                         AdminResultContent(
+                            isWide = isWide,
                             product = product!!,
                             onEditClick = { isEditing = true },
                             onDeleteClick = {
@@ -221,6 +231,7 @@ class Result : ComponentActivity() {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun EditProductScreen(
+    isWide: Boolean,
     product: Product,
     onSave: (Product) -> Unit,
     onDelete: () -> Unit,
@@ -256,10 +267,10 @@ fun EditProductScreen(
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Spacer(modifier = Modifier.height(24.dp))
-        Image(painter = painterResource(id = R.drawable.logo_easy_price), contentDescription = "Logo", modifier = Modifier.size(150.dp))
+        Image(painter = painterResource(id = R.drawable.logo_easy_price), contentDescription = "Logo", modifier = Modifier.size(if (isWide) 100.dp else 150.dp))
         
         Card(
-            modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
+            modifier = Modifier.fillMaxWidth(if (isWide) 0.7f else 1f).padding(top = 16.dp),
             shape = RoundedCornerShape(24.dp),
             colors = CardDefaults.cardColors(containerColor = Color.White)
         ) {
@@ -267,36 +278,77 @@ fun EditProductScreen(
                 Text("Editar Producto", fontWeight = FontWeight.Bold, fontSize = 20.sp, modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center)
                 Spacer(modifier = Modifier.height(16.dp))
                 
-                OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Nombre") }, modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(value = price, onValueChange = { price = it }, label = { Text("Precio") }, modifier = Modifier.fillMaxWidth(), keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number))
-                OutlinedTextField(value = marca, onValueChange = { marca = it }, label = { Text("Marca") }, modifier = Modifier.fillMaxWidth())
-                
-                Text("Categoría:", fontWeight = FontWeight.Bold, fontSize = 14.sp, modifier = Modifier.padding(top = 8.dp))
-                ExposedDropdownMenuBox(
-                    expanded = expandedCategory,
-                    onExpandedChange = { expandedCategory = !expandedCategory },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    OutlinedTextField(
-                        value = categoria,
-                        onValueChange = {},
-                        readOnly = true,
-                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedCategory) },
-                        modifier = Modifier.menuAnchor().fillMaxWidth()
-                    )
-                    ExposedDropdownMenu(
-                        expanded = expandedCategory,
-                        onDismissRequest = { expandedCategory = false }
-                    ) {
-                        categoriesMap.keys.forEach { selectionOption ->
-                            DropdownMenuItem(
-                                text = { Text(selectionOption) },
-                                onClick = {
-                                    categoria = selectionOption
-                                    subcategoria = "" 
-                                    expandedCategory = false
+                if (isWide) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                        OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Nombre") }, modifier = Modifier.weight(1f))
+                        OutlinedTextField(value = price, onValueChange = { price = it }, label = { Text("Precio") }, modifier = Modifier.weight(1f), keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number))
+                    }
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                        OutlinedTextField(value = marca, onValueChange = { marca = it }, label = { Text("Marca") }, modifier = Modifier.weight(1f))
+                        Column(Modifier.weight(1f)) {
+                             Text("Categoría:", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                             ExposedDropdownMenuBox(
+                                expanded = expandedCategory,
+                                onExpandedChange = { expandedCategory = !expandedCategory },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                OutlinedTextField(
+                                    value = categoria,
+                                    onValueChange = {},
+                                    readOnly = true,
+                                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedCategory) },
+                                    modifier = Modifier.menuAnchor().fillMaxWidth()
+                                )
+                                ExposedDropdownMenu(
+                                    expanded = expandedCategory,
+                                    onDismissRequest = { expandedCategory = false }
+                                ) {
+                                    categoriesMap.keys.forEach { selectionOption ->
+                                        DropdownMenuItem(
+                                            text = { Text(selectionOption) },
+                                            onClick = {
+                                                categoria = selectionOption
+                                                subcategoria = "" 
+                                                expandedCategory = false
+                                            }
+                                        )
+                                    }
                                 }
-                            )
+                            }
+                        }
+                    }
+                } else {
+                    OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Nombre") }, modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(value = price, onValueChange = { price = it }, label = { Text("Precio") }, modifier = Modifier.fillMaxWidth(), keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number))
+                    OutlinedTextField(value = marca, onValueChange = { marca = it }, label = { Text("Marca") }, modifier = Modifier.fillMaxWidth())
+                    
+                    Text("Categoría:", fontWeight = FontWeight.Bold, fontSize = 14.sp, modifier = Modifier.padding(top = 8.dp))
+                    ExposedDropdownMenuBox(
+                        expanded = expandedCategory,
+                        onExpandedChange = { expandedCategory = !expandedCategory },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        OutlinedTextField(
+                            value = categoria,
+                            onValueChange = {},
+                            readOnly = true,
+                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedCategory) },
+                            modifier = Modifier.menuAnchor().fillMaxWidth()
+                        )
+                        ExposedDropdownMenu(
+                            expanded = expandedCategory,
+                            onDismissRequest = { expandedCategory = false }
+                        ) {
+                            categoriesMap.keys.forEach { selectionOption ->
+                                DropdownMenuItem(
+                                    text = { Text(selectionOption) },
+                                    onClick = {
+                                        categoria = selectionOption
+                                        subcategoria = "" 
+                                        expandedCategory = false
+                                    }
+                                )
+                            }
                         }
                     }
                 }
@@ -337,30 +389,56 @@ fun EditProductScreen(
                 
                 Spacer(modifier = Modifier.height(24.dp))
                 
-                Button(
-                    onClick = { onSave(product.copy(name = name, price = price.toDoubleOrNull() ?: 0.0, marca = marca, categoria = categoria, subcategoria = subcategoria, description = description)) },
-                    modifier = Modifier.fillMaxWidth().height(50.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00E5FF))
-                ) {
-                    Text("Guardar Cambios", color = Color.Black, fontWeight = FontWeight.Bold)
-                }
-                Spacer(modifier = Modifier.height(8.dp))
-                
-                Button(
-                    onClick = onDelete,
-                    modifier = Modifier.fillMaxWidth().height(50.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color.Red)
-                ) {
-                    Text("Eliminar Producto", color = Color.White, fontWeight = FontWeight.Bold)
-                }
-                Spacer(modifier = Modifier.height(8.dp))
+                if (isWide) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(
+                            onClick = { onSave(product.copy(name = name, price = price.toDoubleOrNull() ?: 0.0, marca = marca, categoria = categoria, subcategoria = subcategoria, description = description)) },
+                            modifier = Modifier.weight(1f).height(50.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00E5FF))
+                        ) {
+                            Text("Guardar", color = Color.Black, fontWeight = FontWeight.Bold)
+                        }
+                        Button(
+                            onClick = onDelete,
+                            modifier = Modifier.weight(1f).height(50.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = Color.Red)
+                        ) {
+                            Text("Eliminar", color = Color.White, fontWeight = FontWeight.Bold)
+                        }
+                        Button(
+                            onClick = onCancel,
+                            modifier = Modifier.weight(1f).height(50.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = Color.LightGray)
+                        ) {
+                            Text("Cancelar", color = Color.Black)
+                        }
+                    }
+                } else {
+                    Button(
+                        onClick = { onSave(product.copy(name = name, price = price.toDoubleOrNull() ?: 0.0, marca = marca, categoria = categoria, subcategoria = subcategoria, description = description)) },
+                        modifier = Modifier.fillMaxWidth().height(50.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00E5FF))
+                    ) {
+                        Text("Guardar Cambios", color = Color.Black, fontWeight = FontWeight.Bold)
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    
+                    Button(
+                        onClick = onDelete,
+                        modifier = Modifier.fillMaxWidth().height(50.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color.Red)
+                    ) {
+                        Text("Eliminar Producto", color = Color.White, fontWeight = FontWeight.Bold)
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
 
-                Button(
-                    onClick = onCancel,
-                    modifier = Modifier.fillMaxWidth().height(50.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color.LightGray)
-                ) {
-                    Text("Cancelar", color = Color.Black)
+                    Button(
+                        onClick = onCancel,
+                        modifier = Modifier.fillMaxWidth().height(50.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color.LightGray)
+                    ) {
+                        Text("Cancelar", color = Color.Black)
+                    }
                 }
             }
         }
