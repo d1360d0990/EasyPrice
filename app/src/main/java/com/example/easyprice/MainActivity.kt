@@ -48,6 +48,8 @@ import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.ShoppingCart
 import androidx.compose.material.icons.filled.ShowChart
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -61,6 +63,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
@@ -909,7 +912,7 @@ fun StatCard(title: String, value: String, modifier: Modifier = Modifier) {
 
 @Composable
 fun SimpleChart() {
-    Card(modifier = Modifier.fillMaxWidth().height(150.dp), colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.05f)), shape = RoundedCornerShape(16.dp)) {
+    Card(modifier = Modifier.fillMaxWidth().height(150.dp), colors = CardDefaults.cardColors(containerColor = Color(0xFF2EF2A3).copy(alpha = 0.05f)), shape = RoundedCornerShape(16.dp)) {
         Row(modifier = Modifier.fillMaxSize().padding(16.dp), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.Bottom) {
             val values = listOf(3, 6, 8, 5, 9, 7, 4)
             values.forEach { Box(modifier = Modifier.width(24.dp).height((it * 12).dp).background(Color(0xFFFFD54F), RoundedCornerShape(topStart = 4.dp, topEnd = 4.dp))) }
@@ -1200,11 +1203,29 @@ fun RoleSelectionScreen(onAdminClick: () -> Unit, onConsumerClick: () -> Unit) {
 fun AdminLoginScreen(onLoginClick: (String, String) -> Unit, onBack: () -> Unit) {
     var username by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
+    var passwordVisible by remember { mutableStateOf(false) }
+
     Column(modifier = Modifier.fillMaxSize().background(Color(0xFF1A0B46)).padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
         Image(painter = painterResource(id = R.drawable.logo_easy_price), contentDescription = "Logo", modifier = Modifier.size(250.dp).padding(bottom = 32.dp), contentScale = ContentScale.Fit)
         TextField(value = username, onValueChange = { username = it }, placeholder = { Text("Usuario") }, modifier = Modifier.fillMaxWidth().height(70.dp), shape = RoundedCornerShape(35.dp), colors = TextFieldDefaults.colors(focusedContainerColor = Color.White, unfocusedContainerColor = Color.White), trailingIcon = { Icon(Icons.Default.Person, contentDescription = null) }, singleLine = true)
         Spacer(modifier = Modifier.height(24.dp))
-        TextField(value = password, onValueChange = { password = it }, placeholder = { Text("Contraseña") }, modifier = Modifier.fillMaxWidth().height(70.dp), shape = RoundedCornerShape(35.dp), visualTransformation = PasswordVisualTransformation(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password), colors = TextFieldDefaults.colors(focusedContainerColor = Color.White, unfocusedContainerColor = Color.White), trailingIcon = { Icon(Icons.Default.Lock, contentDescription = null) }, singleLine = true)
+        TextField(
+            value = password,
+            onValueChange = { password = it },
+            placeholder = { Text("Contraseña") },
+            modifier = Modifier.fillMaxWidth().height(70.dp),
+            shape = RoundedCornerShape(35.dp),
+            visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+            colors = TextFieldDefaults.colors(focusedContainerColor = Color.White, unfocusedContainerColor = Color.White),
+            trailingIcon = {
+                val icon = if (passwordVisible) Icons.Filled.Visibility else Icons.Filled.VisibilityOff
+                IconButton(onClick = { passwordVisible = !passwordVisible }) {
+                    Icon(imageVector = icon, contentDescription = "Toggle password visibility")
+                }
+            },
+            singleLine = true
+        )
         Spacer(modifier = Modifier.height(48.dp))
         Button(onClick = { onLoginClick(username, password) }, modifier = Modifier.width(200.dp).height(60.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2EF2A3)), shape = RoundedCornerShape(30.dp)) { Text(text = "Login", color = Color(0xFF1A0B46), fontSize = 20.sp, fontWeight = FontWeight.Bold) }
         TextButton(onClick = onBack, modifier = Modifier.padding(top = 16.dp)) { Text("Volver", color = Color.White) }
