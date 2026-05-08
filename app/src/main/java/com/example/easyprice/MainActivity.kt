@@ -14,353 +14,380 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.*
-import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Assessment
+import androidx.compose.material.icons.filled.Chat
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Dashboard
+import androidx.compose.material.icons.filled.Done
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Face
+import androidx.compose.material.icons.filled.Inventory
+import androidx.compose.material.icons.filled.List
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.QrCodeScanner
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Send
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.ShoppingCart
+import androidx.compose.material.icons.filled.ShowChart
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.*
-import androidx.compose.material3.windowsizeclass.ExperimentalMaterial3WindowSizeClassApi
-import androidx.compose.material3.windowsizeclass.WindowWidthSizeClass
-import androidx.compose.material3.windowsizeclass.calculateWindowSizeClass
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.FileProvider
+import androidx.core.os.bundleOf
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.easyprice.data.FavoritesManager
+import com.example.easyprice.data.HistoryManager
 import com.example.easyprice.model.Product
 import com.example.easyprice.ui.theme.EasyPriceTheme
-import com.github.mikephil.charting.charts.BarChart
 import com.github.mikephil.charting.charts.LineChart
-import com.github.mikephil.charting.charts.PieChart
-import com.github.mikephil.charting.data.*
-import com.github.mikephil.charting.formatter.IndexAxisValueFormatter
+import com.github.mikephil.charting.data.Entry
+import com.github.mikephil.charting.data.LineData
+import com.github.mikephil.charting.data.LineDataSet
+import com.google.firebase.analytics.ktx.analytics
 import com.google.firebase.firestore.AggregateSource
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
 import com.google.firebase.firestore.SetOptions
+import com.google.firebase.ktx.Firebase
 import java.io.File
 import java.io.FileOutputStream
-import java.io.PrintWriter
 import java.text.SimpleDateFormat
 import java.util.*
 
-// --- ViewModels ---
-
+// 🧠 Dashboard ViewModel
 class DashboardViewModel : ViewModel() {
     var totalScans by mutableIntStateOf(0)
     var activeUsers by mutableIntStateOf(0)
     var totalProducts by mutableIntStateOf(0)
     var isLoading by mutableStateOf(false)
-    var topProducts by mutableStateOf<List<String>>(emptyList())
-    var selectedFilter by mutableStateOf("Historico")
-    
-    // Indicadores de Tendencia
-    var scansTrend by mutableStateOf("")
-    var usersTrend by mutableStateOf("")
-    
-    // Alertas Críticas
-    var criticalAlerts by mutableStateOf<List<String>>(emptyList())
 
-    fun loadStats(filter: String = "Historico") {
-        selectedFilter = filter
+    var topProducts by mutableStateOf<List<String>>(emptyList())
+
+    fun loadStats(context: Context) {
         isLoading = true
         val db = FirebaseFirestore.getInstance()
-        db.collection("stats").document("global").get().addOnSuccessListener { doc ->
-            if (doc.exists()) {
-                val multiplier = when(filter) {
-                    "Hoy" -> 0.05
-                    "7D" -> 0.25
-                    "30D" -> 0.6
-                    "Año" -> 0.9
-                    else -> 1.0
+        
+        db.collection("stats").document("global").get()
+            .addOnSuccessListener { doc ->
+                if (doc.exists()) {
+                    totalScans = doc.getLong("total_scans")?.toInt() ?: 0
+                    activeUsers = doc.getLong("active_users")?.toInt() ?: 0
                 }
-                totalScans = ((doc.getLong("total_scans") ?: 0) * multiplier).toInt()
-                activeUsers = ((doc.getLong("active_users") ?: 0) * multiplier).toInt()
                 
-                // Simulación de tendencias
-                scansTrend = if (filter == "7D") "+18%" else if (filter == "Hoy") "+5%" else "+12%"
-                usersTrend = if (filter == "7D") "-2%" else "+8%"
+                db.collection("products").count().get(AggregateSource.SERVER)
+                    .addOnSuccessListener { snapshot ->
+                        totalProducts = snapshot.count.toInt()
+                        
+                        db.collection("product_stats")
+                            .orderBy("scan_count", Query.Direction.DESCENDING)
+                            .limit(5)
+                            .get()
+                            .addOnSuccessListener { topSnapshot ->
+                                topProducts = topSnapshot.documents.map { it.getString("name") ?: "Sin nombre" }
+                                isLoading = false
+                            }
+                            .addOnFailureListener {
+                                isLoading = false
+                            }
+                    }
+                    .addOnFailureListener {
+                        isLoading = false
+                    }
             }
-            db.collection("products").count().get(AggregateSource.SERVER).addOnSuccessListener { snapshot ->
-                totalProducts = snapshot.count.toInt()
-                db.collection("product_stats").orderBy("scan_count", Query.Direction.DESCENDING).limit(5).get().addOnSuccessListener { topSnapshot ->
-                    topProducts = topSnapshot.documents.map { it.getString("name") ?: "Sin nombre" }
-                    
-                    // Simulación de Alertas Críticas
-                    criticalAlerts = listOf(
-                        "12 productos sin precio detectados",
-                        "Descalce de precio en 'Leche Entera 1L' (Subió 25%)",
-                        "Baja frecuencia de escaneo en zona Norte"
-                    )
-                    
-                    isLoading = false
-                }.addOnFailureListener { isLoading = false }
-            }.addOnFailureListener { isLoading = false }
-        }.addOnFailureListener { isLoading = false }
+            .addOnFailureListener {
+                isLoading = false
+                Toast.makeText(context, "Error de conexión al Dashboard", Toast.LENGTH_SHORT).show()
+            }
     }
 }
 
+// 🧠 Productos ViewModel
 class ProductosViewModel : ViewModel() {
     var productos by mutableStateOf<List<Product>>(emptyList())
     var isLoading by mutableStateOf(false)
+
     fun loadProductos() {
         isLoading = true
-        FirebaseFirestore.getInstance().collection("products").get().addOnSuccessListener { result ->
-            productos = result.mapNotNull { doc ->
-                try {
-                    Product(
-                        name = doc.getString("name") ?: "",
-                        price = doc.getDouble("price") ?: 0.0,
-                        code = doc.getString("codigo") ?: "",
-                        marca = doc.getString("marca") ?: "",
-                        categoria = doc.getString("categoria") ?: "",
-                        subcategoria = doc.getString("subcategoria") ?: "",
-                        description = doc.getString("descripcion") ?: "",
-                        quantity = doc.getLong("quantity")?.toInt() ?: 100
-                    )
-                } catch (e: Exception) { null }
+        FirebaseFirestore.getInstance()
+            .collection("products")
+            .get()
+            .addOnSuccessListener { result ->
+                productos = result.mapNotNull { doc ->
+                    try {
+                        Product(
+                            name = doc.getString("name") ?: "",
+                            price = doc.getDouble("price") ?: 0.0,
+                            code = doc.getString("codigo") ?: "",
+                            marca = doc.getString("marca") ?: "",
+                            categoria = doc.getString("categoria") ?: "",
+                            subcategoria = doc.getString("subcategoria") ?: "",
+                            description = doc.getString("descripcion") ?: ""
+                        )
+                    } catch (e: Exception) { null }
+                }
+                isLoading = false
             }
-            isLoading = false
-        }.addOnFailureListener { isLoading = false }
+            .addOnFailureListener {
+                isLoading = false
+            }
     }
 }
 
+// 🧠 Escaneos ViewModel
 class EscaneosViewModel : ViewModel() {
     var topProductos by mutableStateOf<List<Pair<String, Int>>>(emptyList())
     var weeklyData by mutableStateOf<List<Int>>(emptyList())
-    var branchActivity by mutableStateOf<List<Pair<String, Int>>>(emptyList())
-    var peakHoursData by mutableStateOf<List<Int>>(emptyList())
-    var failedScans by mutableStateOf<List<String>>(emptyList())
     var isLoading by mutableStateOf(false)
 
     fun loadData() {
         isLoading = true
-        val db = FirebaseFirestore.getInstance()
-        
-        // Cargar Top Productos
-        db.collection("product_stats").orderBy("scan_count", Query.Direction.DESCENDING).limit(5).get().addOnSuccessListener { result ->
-            topProductos = result.map { Pair(it.getString("name") ?: "", it.getLong("scan_count")?.toInt() ?: 0) }
-            isLoading = false
-        }.addOnFailureListener { isLoading = false }
-        
-        // Simulación de datos dinámicos solicitados
+        loadTopProductos()
+        loadWeeklyData()
+    }
+
+    private fun loadTopProductos() {
+        FirebaseFirestore.getInstance()
+            .collection("product_stats")
+            .orderBy("scan_count", Query.Direction.DESCENDING)
+            .limit(5)
+            .get()
+            .addOnSuccessListener { result ->
+                topProductos = result.map {
+                    Pair(
+                        it.getString("name") ?: "",
+                        it.getLong("scan_count")?.toInt() ?: 0
+                    )
+                }
+                isLoading = false
+            }
+            .addOnFailureListener { isLoading = false }
+    }
+
+    private fun loadWeeklyData() {
+        // Simulación (después podés usar colección "scans_by_day")
         weeklyData = listOf(10, 25, 40, 30, 50, 60, 45)
-        
-        // Mapa de Calor Local (Actividad por Sucursal)
-        branchActivity = listOf(
-            "Sucursal Centro" to 1250,
-            "Sucursal Norte" to 850,
-            "Sucursal Sur" to 600,
-            "Sucursal Este" to 450
-        )
-        
-        // Horas Pico (Escaneos por hora del día 0-23)
-        peakHoursData = listOf(5, 2, 1, 0, 0, 2, 10, 35, 80, 120, 150, 180, 210, 190, 160, 140, 170, 220, 250, 200, 120, 80, 40, 15)
-        
-        // Escaneos Fallidos (Productos no encontrados)
-        failedScans = listOf("7791234567890", "7799876543210", "041234567892", "779456123789")
     }
 }
 
+// 🧠 Tendencias ViewModel
 class TendenciasViewModel : ViewModel() {
     var weeklyData by mutableStateOf<List<Int>>(emptyList())
-    var hotProducts by mutableStateOf<List<Pair<String, Double>>>(emptyList())
-    var depletionPredictions by mutableStateOf<List<Pair<String, Int>>>(emptyList())
-    var selectedProductDailyData by mutableStateOf<List<Int>>(emptyList())
+    var growthProducts by mutableStateOf<List<Triple<String, Int, Int>>>(emptyList())
     var isLoading by mutableStateOf(false)
 
     fun loadData() {
         isLoading = true
-        val db = FirebaseFirestore.getInstance()
-        
-        // Datos generales de escaneos semanales para la línea de tiempo
-        db.collection("scans_by_day").orderBy("__name__", Query.Direction.ASCENDING).limitToLast(7).get().addOnSuccessListener { result ->
-            weeklyData = result.map { it.getLong("count")?.toInt() ?: 0 }
-            isLoading = false
-        }.addOnFailureListener { isLoading = false }
-        
-        // Productos con crecimiento (Hot Products > 20%)
-        db.collection("product_stats").get().addOnSuccessListener { result ->
-            val list = result.map {
-                val name = it.getString("name") ?: ""
-                val current = it.getLong("scan_count")?.toInt() ?: 0
-                val last = it.getLong("last_week_count")?.toInt() ?: 1
-                val growth = ((current - last).toDouble() / last) * 100
-                name to growth
+        loadWeeklyData()
+        loadGrowthProducts()
+    }
+
+    private fun loadWeeklyData() {
+        FirebaseFirestore.getInstance()
+            .collection("scans_by_day")
+            .orderBy("__name__", Query.Direction.ASCENDING)
+            .limitToLast(7)
+            .get()
+            .addOnSuccessListener { result ->
+                weeklyData = result.map {
+                    it.getLong("count")?.toInt() ?: 0
+                }
+                isLoading = false
             }
-            
-            hotProducts = list.filter { it.second > 20 }.sortedByDescending { it.second }.take(5)
+            .addOnFailureListener { isLoading = false }
+    }
 
-            // Predicción de Agotamiento (Basado en demanda diaria vs stock simulado)
-            depletionPredictions = listOf(
-                "Leche Entera 1L" to 3,
-                "Yerba Mate 500g" to 2,
-                "Pan Lactal Familiar" to 5,
-                "Aceite Girasol 1.5L" to 8
-            )
+    private fun loadGrowthProducts() {
+        FirebaseFirestore.getInstance()
+            .collection("product_stats")
+            .get()
+            .addOnSuccessListener { result ->
+                growthProducts = result.map {
+                    val name = it.getString("name") ?: ""
+                    val current = it.getLong("scan_count")?.toInt() ?: 0
+                    val last = it.getLong("last_week_count")?.toInt() ?: 0
 
-            // Comparativa por días de la semana (Producto Específico)
-            selectedProductDailyData = listOf(12, 18, 25, 30, 45, 60, 55) // Lunes a Domingo
-        }
+                    Triple(name, current, last)
+                }.sortedByDescending {
+                    it.second - it.third
+                }.take(5)
+            }
     }
 }
 
+// 🧠 Reportes ViewModel
 class ReportesViewModel : ViewModel() {
     var isGenerating by mutableStateOf(false)
     var reportsList = mutableStateListOf<String>()
-    
-    // Filtros de columnas
-    var includePrice by mutableStateOf(true)
-    var includeStock by mutableStateOf(true)
-    var includeCategory by mutableStateOf(true)
-    var includeCode by mutableStateOf(false)
-    
-    // Programación
-    var scheduleEnabled by mutableStateOf(false)
-    var targetEmail by mutableStateOf("gerente@easyprice.com")
 
-    data class ReportProduct(val name: String, val price: Double, val stock: Int, val category: String, val code: String)
+    data class ReportProduct(val name: String, val count: Int)
 
-    fun generarReportePdf(context: Context) {
+    fun generarNuevoReporte(context: Context) {
         isGenerating = true
         val db = FirebaseFirestore.getInstance()
-        db.collection("products").get().addOnSuccessListener { result ->
-            val products = result.map { doc ->
-                ReportProduct(
-                    name = doc.getString("name") ?: "N/A",
-                    price = doc.getDouble("price") ?: 0.0,
-                    stock = doc.getLong("quantity")?.toInt() ?: 0,
-                    category = doc.getString("categoria") ?: "Sin cat.",
-                    code = doc.getString("codigo") ?: ""
-                )
+        
+        db.collection("stats").document("global").get().addOnSuccessListener { statsDoc ->
+            val totalScans = statsDoc.getLong("total_scans") ?: 0
+            val activeUsers = statsDoc.getLong("active_users") ?: 0
+            
+            db.collection("products").count().get(AggregateSource.SERVER).addOnSuccessListener { productSnapshot ->
+                val totalProductsCount = productSnapshot.count
+
+                db.collection("product_stats")
+                    .orderBy("scan_count", Query.Direction.DESCENDING)
+                    .limit(5)
+                    .get()
+                    .addOnSuccessListener { topSnap ->
+                        val topProducts = topSnap.documents.map { 
+                            ReportProduct(
+                                name = it.getString("name") ?: "Sin nombre",
+                                count = it.getLong("scan_count")?.toInt() ?: 0
+                            )
+                        }
+
+                        db.collection("scans_by_day")
+                            .orderBy("__name__", Query.Direction.ASCENDING)
+                            .limitToLast(7)
+                            .get()
+                            .addOnSuccessListener { scansSnap ->
+                                val weeklyScans = scansSnap.documents.map { it.getLong("count")?.toInt() ?: 0 }
+                                val chartBitmap = createChartBitmap(context, weeklyScans)
+                                crearPdfReal(context, totalScans, activeUsers, totalProductsCount, topProducts, chartBitmap)
+                            }
+                            .addOnFailureListener {
+                                isGenerating = false
+                                Toast.makeText(context, "Error al obtener datos históricos", Toast.LENGTH_SHORT).show()
+                            }
+                    }
+                    .addOnFailureListener {
+                        isGenerating = false
+                        Toast.makeText(context, "Error al obtener top productos", Toast.LENGTH_SHORT).show()
+                    }
             }
-            crearPdfReal(context, products)
-        }.addOnFailureListener { isGenerating = false }
+            .addOnFailureListener {
+                isGenerating = false
+                Toast.makeText(context, "Error al contar productos", Toast.LENGTH_SHORT).show()
+            }
+        }.addOnFailureListener {
+            isGenerating = false
+            Toast.makeText(context, "Error al obtener estadísticas globales", Toast.LENGTH_SHORT).show()
+        }
     }
 
-    fun generarReporteExcel(context: Context) {
-        isGenerating = true
-        val db = FirebaseFirestore.getInstance()
-        db.collection("products").get().addOnSuccessListener { result ->
-            val products = result.map { doc ->
-                ReportProduct(
-                    name = doc.getString("name") ?: "N/A",
-                    price = doc.getDouble("price") ?: 0.0,
-                    stock = doc.getLong("quantity")?.toInt() ?: 0,
-                    category = doc.getString("categoria") ?: "Sin cat.",
-                    code = doc.getString("codigo") ?: ""
-                )
-            }
-            crearCsvReal(context, products)
-        }.addOnFailureListener { isGenerating = false }
+    private fun createChartBitmap(context: Context, data: List<Int>): Bitmap {
+        val chart = LineChart(context)
+        chart.layout(0, 0, 600, 300)
+        
+        val entries = data.mapIndexed { index, value ->
+            Entry(index.toFloat(), value.toFloat())
+        }
+
+        val dataSet = LineDataSet(entries, "Escaneos").apply {
+            color = android.graphics.Color.parseColor("#2EF2A3")
+            setCircleColor(android.graphics.Color.parseColor("#FFD54F"))
+            lineWidth = 2f
+            setDrawValues(false)
+        }
+
+        chart.data = LineData(dataSet)
+        chart.description.isEnabled = false
+        chart.legend.isEnabled = false
+        chart.xAxis.setDrawGridLines(false)
+        chart.axisLeft.setDrawGridLines(false)
+        chart.axisRight.isEnabled = false
+        
+        val bitmap = Bitmap.createBitmap(600, 300, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+        chart.draw(canvas)
+        return bitmap
     }
 
-    private fun crearCsvReal(context: Context, products: List<ReportProduct>) {
-        val fileName = "reporte_${System.currentTimeMillis()}.csv"
-        val file = File(context.getExternalFilesDir(null), fileName)
-        try {
-            val writer = PrintWriter(FileOutputStream(file))
-            val header = StringBuilder("Producto")
-            if (includePrice) header.append(",Precio")
-            if (includeStock) header.append(",Stock")
-            if (includeCategory) header.append(",Categoria")
-            if (includeCode) header.append(",Codigo")
-            writer.println(header.toString())
-
-            products.forEach { p ->
-                val row = StringBuilder(p.name)
-                if (includePrice) row.append(",${p.price}")
-                if (includeStock) row.append(",${p.stock}")
-                if (includeCategory) row.append(",${p.category}")
-                if (includeCode) row.append(",${p.code}")
-                writer.println(row.toString())
-            }
-            writer.close()
-            reportsList.add(0, fileName)
-            Toast.makeText(context, "Excel/CSV generado", Toast.LENGTH_SHORT).show()
-        } catch (e: Exception) { Log.e("CSV", e.message ?: "") }
-        finally { isGenerating = false }
-    }
-
-    private fun crearPdfReal(context: Context, products: List<ReportProduct>) {
+    private fun crearPdfReal(context: Context, scans: Long, users: Long, products: Long, topProductos: List<ReportProduct>, chartBitmap: Bitmap) {
         val pdfDocument = PdfDocument()
         val pageInfo = PdfDocument.PageInfo.Builder(595, 842, 1).create()
         val page = pdfDocument.startPage(pageInfo)
         val canvas: Canvas = page.canvas
         val paint = Paint()
         
-        paint.textSize = 20f
+        paint.textSize = 24f
         paint.isFakeBoldText = true
-        canvas.drawText("Reporte de Inventario EasyPrice", 50f, 50f, paint)
+        canvas.drawText("Reporte de Actividad EasyPrice", 50f, 50f, paint)
         
-        paint.textSize = 12f
+        paint.textSize = 14f
         paint.isFakeBoldText = false
         val date = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()).format(Date())
-        canvas.drawText("Fecha: $date", 50f, 80f, paint)
+        canvas.drawText("Generado el: $date", 50f, 80f, paint)
 
-        var y = 120f
-        paint.isFakeBoldText = true
-        canvas.drawText("Producto", 50f, y, paint)
-        var xOffset = 250f
-        if (includePrice) { canvas.drawText("Precio", xOffset, y, paint); xOffset += 80f }
-        if (includeStock) { canvas.drawText("Stock", xOffset, y, paint); xOffset += 80f }
-        if (includeCategory) { canvas.drawText("Cat.", xOffset, y, paint) }
-        
-        y += 20f
-        canvas.drawLine(50f, y - 10f, 550f, y - 10f, paint)
-        
+        canvas.drawBitmap(chartBitmap, 50f, 110f, paint)
+
+        canvas.drawText("Estadísticas Generales:", 50f, 430f, paint.apply { isFakeBoldText = true })
         paint.isFakeBoldText = false
-        products.take(20).forEach { p ->
-            canvas.drawText(p.name.take(25), 50f, y, paint)
-            var xVal = 250f
-            if (includePrice) { canvas.drawText("$${p.price}", xVal, y, paint); xVal += 80f }
-            if (includeStock) { canvas.drawText("${p.stock}", xVal, y, paint); xVal += 80f }
-            if (includeCategory) { canvas.drawText(p.category.take(15), xVal, y, paint) }
-            y += 20f
-            if (y > 800) return@forEach // Limitar a una página por simplicidad
+        canvas.drawText("Total escaneos: $scans", 50f, 460f, paint)
+        canvas.drawText("Usuarios activos: $users", 50f, 480f, paint)
+        canvas.drawText("Total productos: $products", 50f, 500f, paint)
+
+        canvas.drawText("Top 5 Productos más escaneados:", 50f, 540f, paint.apply { isFakeBoldText = true })
+        paint.isFakeBoldText = false
+        var y = 570f
+        topProductos.forEach {
+            canvas.drawText("• ${it.name}: ${it.count} escaneos", 70f, y, paint)
+            y += 25f
         }
 
         pdfDocument.finishPage(page)
-        val fileName = "reporte_${System.currentTimeMillis()}.pdf"
+
+        val timeStamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
+        val fileName = "Reporte_$timeStamp.pdf"
         val file = File(context.getExternalFilesDir(null), fileName)
+
         try {
             pdfDocument.writeTo(FileOutputStream(file))
-            reportsList.add(0, fileName)
-            Toast.makeText(context, "PDF generado", Toast.LENGTH_SHORT).show()
-        } catch (e: Exception) { Log.e("PDF", e.message ?: "") }
-        finally { pdfDocument.close(); isGenerating = false }
-    }
-
-    fun toggleSchedule(enabled: Boolean, context: Context) {
-        scheduleEnabled = enabled
-        if (enabled) {
-            Toast.makeText(context, "Reporte programado: Lunes 8:00 AM para $targetEmail", Toast.LENGTH_LONG).show()
+            if (!reportsList.contains(fileName)) reportsList.add(0, fileName)
+            Toast.makeText(context, "Reporte guardado: $fileName", Toast.LENGTH_SHORT).show()
+        } catch (e: Exception) {
+            Log.e("PDF", "Error al guardar: ${e.message}")
+            Toast.makeText(context, "Error al generar PDF", Toast.LENGTH_SHORT).show()
+        } finally {
+            pdfDocument.close()
+            isGenerating = false
         }
     }
 
@@ -368,89 +395,98 @@ class ReportesViewModel : ViewModel() {
         val file = File(context.getExternalFilesDir(null), fileName)
         if (file.exists()) {
             val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
-            val type = if (fileName.endsWith(".pdf")) "application/pdf" else "text/csv"
             val intent = Intent(Intent.ACTION_VIEW).apply {
-                setDataAndType(uri, type)
+                setDataAndType(uri, "application/pdf")
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
             try {
                 context.startActivity(intent)
             } catch (e: Exception) {
-                Toast.makeText(context, "No hay aplicación para abrir este archivo", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, "No hay aplicaciones para abrir PDF", Toast.LENGTH_SHORT).show()
             }
+        } else {
+            Toast.makeText(context, "El archivo no existe", Toast.LENGTH_SHORT).show()
         }
     }
-    
+
     fun shareReport(context: Context, fileName: String) {
         val file = File(context.getExternalFilesDir(null), fileName)
         if (file.exists()) {
             val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
-            val type = if (fileName.endsWith(".pdf")) "application/pdf" else "text/csv"
             val intent = Intent(Intent.ACTION_SEND).apply {
-                this.type = type
+                type = "application/pdf"
                 putExtra(Intent.EXTRA_STREAM, uri)
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
-            context.startActivity(Intent.createChooser(intent, "Compartir"))
+            context.startActivity(Intent.createChooser(intent, "Compartir Reporte"))
+        } else {
+            Toast.makeText(context, "El archivo no existe", Toast.LENGTH_SHORT).show()
         }
-    }
-
-    fun generarNuevoReporte(context: Context) {
-        // Mantenemos compatibilidad con el dashboard llamando a PDF por defecto
-        generarReportePdf(context)
     }
 }
 
+// 🧠 Asistente IA ViewModel
 class AsistenteIAViewModel : ViewModel() {
     var messages = mutableStateListOf<Pair<String, Boolean>>()
     var isTyping by mutableStateOf(false)
-    init { messages.add("¡Hola! Soy tu asistente EasyPrice. ¿En qué puedo ayudarte?" to false) }
-    
+
+    init {
+        messages.add("¡Hola! Soy tu asistente EasyPrice. ¿En qué puedo ayudarte hoy?" to false)
+    }
+
     fun sendMessage(query: String) {
         messages.add(query to true)
         isTyping = true
+        
+        val db = FirebaseFirestore.getInstance()
+        
+        if (query.lowercase().contains("top") || query.lowercase().contains("mas escaneados")) {
+            db.collection("product_stats")
+                .orderBy("scan_count", Query.Direction.DESCENDING)
+                .limit(5)
+                .get()
+                .addOnSuccessListener { snapshot ->
+                    val dataForAI = snapshot.documents.mapIndexed { index, doc ->
+                        "${index + 1}. ${doc.getString("name")} - ${doc.getLong("scan_count")}"
+                    }.joinToString("\n")
+                    
+                    val topName = snapshot.documents.firstOrNull()?.getString("name") ?: "N/A"
+                    simulateIAResponse("Análisis Estratégico:\n\nEl producto '$topName' lidera la demanda. Aquí el detalle:\n$dataForAI\n\nSe observa una tendencia clara hacia esta categoría.")
+                }
+        } else if (query.lowercase().contains("crecimiento") || query.lowercase().contains("tendencia")) {
+            db.collection("product_stats")
+                .get()
+                .addOnSuccessListener { snapshot ->
+                    val trend = snapshot.documents
+                        .mapNotNull { it.getString("name") }
+                        .take(2)
+                        .joinToString { it }
+                    simulateIAResponse("He analizado las tendencias y $trend muestran un crecimiento constante esta semana.")
+                }
+        } else {
+            simulateIAResponse("Interesante pregunta. Puedo ayudarte con estadísticas de productos, tendencias de escaneo o información de inventario. ¿Qué prefieres consultar?")
+        }
+    }
+
+    private fun simulateIAResponse(response: String) {
         android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-            val response = processQuery(query)
             messages.add(response to false)
             isTyping = false
         }, 1500)
     }
-
-    private fun processQuery(query: String): String {
-        val q = query.lowercase()
-        return when {
-            q.contains("producto más buscado") || q.contains("más buscado") -> {
-                "El producto más buscado el lunes pasado en la tarde fue 'Leche Entera 1L' con 145 escaneos en la sucursal Centro."
-            }
-            q.contains("sugerencia") || q.contains("precio") -> {
-                "Basado en la competencia local, sugiero bajar el precio de los 'Auriculares Bluetooth' un 5% para aumentar un 10% las ventas estimadas esta semana."
-            }
-            q.contains("resumen") -> {
-                generateSummary()
-            }
-            else -> "Entiendo tu consulta sobre '$query'. ¿Deseas ver estadísticas específicas o sugerencias de precios?"
-        }
-    }
-
-    fun generateSummary(): String {
-        return "Resumen del día: Hoy se registraron 1,250 escaneos, un 12% más que ayer. El producto estrella sigue siendo la 'Yerba Mate 500g'. Se detectaron 3 productos con stock crítico en la sucursal Norte."
-    }
 }
 
-// --- MainActivity ---
-
 class MainActivity : ComponentActivity() {
-    @OptIn(ExperimentalMaterial3WindowSizeClassApi::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        
         val targetScreen = intent.getStringExtra("target_screen") ?: "role_selection"
+        
         setContent {
-            val windowSizeClass = calculateWindowSizeClass(this)
-            val isWide = windowSizeClass.widthSizeClass != WindowWidthSizeClass.Compact
-
             EasyPriceTheme {
                 var currentScreen by rememberSaveable { mutableStateOf(targetScreen) }
                 var scannedBarcode by rememberSaveable { mutableStateOf("") }
+
                 val context = LocalContext.current
                 val barcodeLauncher = rememberLauncherForActivityResult(
                     contract = ActivityResultContracts.StartActivityForResult(),
@@ -458,9 +494,18 @@ class MainActivity : ComponentActivity() {
                         if (result.resultCode == Activity.RESULT_OK) {
                             val barcode = result.data?.getStringExtra("barcode_result")?.trim() ?: ""
                             scannedBarcode = barcode
-                            FirebaseFirestore.getInstance().collection("products").whereEqualTo("codigo", barcode).get()
+                            
+                            val db = FirebaseFirestore.getInstance()
+                            db.collection("products").whereEqualTo("codigo", barcode).get()
                                 .addOnSuccessListener { documents ->
-                                    currentScreen = if (documents.isEmpty) "admin_add_product" else "admin_product_exists"
+                                    if (documents.isEmpty) {
+                                        currentScreen = "admin_add_product"
+                                    } else {
+                                        currentScreen = "admin_product_exists"
+                                    }
+                                }
+                                .addOnFailureListener {
+                                    Toast.makeText(context, "Error al conectar con la base de datos", Toast.LENGTH_SHORT).show()
                                 }
                         }
                     }
@@ -468,35 +513,29 @@ class MainActivity : ComponentActivity() {
 
                 when (currentScreen) {
                     "role_selection" -> RoleSelectionScreen(
-                        isWide = isWide,
                         onAdminClick = { currentScreen = "admin_login" },
-                        onConsumerClick = { trackUserActivity(); currentScreen = "consumer_home" }
+                        onConsumerClick = { 
+                            trackUserActivity()
+                            currentScreen = "consumer_home" 
+                        }
                     )
                     "admin_login" -> AdminLoginScreen(
-                        isWide = isWide,
                         onLoginClick = { user, pass ->
-                            val u = user.trim()
-                            val p = pass.trim()
-                            if (u == "admin" && p == "admin") currentScreen = "admin_home"
-                            else if (u == "gerencia" && p == "gerencia") currentScreen = "management_home"
+                            if (user == "admin" && pass == "admin") currentScreen = "admin_home"
+                            else if (user == "gerencia" && pass == "gerencia") currentScreen = "management_home"
                             else Toast.makeText(this, "Credenciales incorrectas", Toast.LENGTH_SHORT).show()
                         },
                         onBack = { currentScreen = "role_selection" }
                     )
-                    "consumer_home" -> MainScreen(
-                        isWide = isWide,
-                        onFavoritesClick = { context.startActivity(Intent(context, FavoritesActivity::class.java)) },
-                        onHistoryClick = { context.startActivity(Intent(context, HistoryActivity::class.java)) },
-                        onLogout = { currentScreen = "role_selection" }
-                    )
                     "admin_home" -> AdminHomeScreen(
-                        isWide = isWide,
-                        onAdminScan = { barcodeLauncher.launch(Intent(context, ScannerActivity::class.java)) },
+                        onAdminScan = {
+                            val intent = Intent(context, ScannerActivity::class.java)
+                            barcodeLauncher.launch(intent)
+                        },
                         onDatabaseClick = { currentScreen = "admin_database" },
                         onLogout = { currentScreen = "role_selection" }
                     )
                     "management_home" -> ManagementHomeScreen(
-                        isWide = isWide,
                         onLogout = { currentScreen = "role_selection" },
                         onDashboardClick = { currentScreen = "dashboard" },
                         onProductsClick = { currentScreen = "management_products" },
@@ -505,21 +544,36 @@ class MainActivity : ComponentActivity() {
                         onAiClick = { currentScreen = "ai_assistant" },
                         onReportsClick = { currentScreen = "reports" }
                     )
-                    "dashboard" -> DashboardScreen(isWide = isWide, onBack = { currentScreen = "management_home" })
-                    "management_products" -> ProductosScreen(isWide = isWide, onBack = { currentScreen = "management_home" }, onProductClick = { bc ->
-                        val intent = Intent(context, Result::class.java).apply { putExtra("barcode", bc) }
-                        context.startActivity(intent)
-                    })
+                    "dashboard" -> DashboardScreen(onBack = { currentScreen = "management_home" })
+                    "management_products" -> ProductosScreen(
+                        onBack = { currentScreen = "management_home" },
+                        onProductClick = { barcode ->
+                            scannedBarcode = barcode
+                            val intent = Intent(context, Result::class.java).apply { putExtra("barcode", barcode) }
+                            context.startActivity(intent)
+                        }
+                    )
                     "management_scans" -> EscaneosScreen(onBack = { currentScreen = "management_home" })
                     "management_trends" -> TendenciasScreen(onBack = { currentScreen = "management_home" })
                     "ai_assistant" -> AiAssistantScreen(onBack = { currentScreen = "management_home" })
                     "reports" -> ReportesScreen(onBack = { currentScreen = "management_home" })
-                    "admin_database" -> DatabaseScreen(onProductClick = { bc ->
-                        val intent = Intent(context, Result::class.java).apply { putExtra("barcode", bc); putExtra("edit_mode", true) }
-                        context.startActivity(intent)
-                    }, onBackToAdminHome = { currentScreen = "admin_home" })
+                    "admin_database" -> DatabaseScreen(
+                        onProductClick = { barcode ->
+                            scannedBarcode = barcode
+                            val intent = Intent(context, Result::class.java).apply {
+                                putExtra("barcode", barcode)
+                                putExtra("edit_mode", true)
+                            }
+                            context.startActivity(intent)
+                        },
+                        onBackToAdminHome = { currentScreen = "admin_home" }
+                    )
                     "admin_product_exists" -> ProductExistsScreen(
-                        onViewProduct = { context.startActivity(Intent(context, Result::class.java).apply { putExtra("barcode", scannedBarcode) }) },
+                        onViewProduct = {
+                            currentScreen = "admin_home"
+                            val intent = Intent(context, Result::class.java).apply { putExtra("barcode", scannedBarcode) }
+                            context.startActivity(intent)
+                        },
                         onBackToAdminHome = { currentScreen = "admin_home" }
                     )
                     "admin_add_product" -> AddProductScreen(
@@ -529,1078 +583,701 @@ class MainActivity : ComponentActivity() {
                         onCancel = { currentScreen = "admin_home" },
                         onBackToAdminHome = { currentScreen = "admin_home" }
                     )
-                    "admin_success" -> SuccessScreen(onCargarOtro = { barcodeLauncher.launch(Intent(context, ScannerActivity::class.java)) }, onBackToAdminHome = { currentScreen = "admin_home" })
-                    "admin_error" -> ErrorScreen(onRetry = { currentScreen = "admin_add_product" }, onBackToAdminHome = { currentScreen = "admin_home" })
+                    "admin_success" -> SuccessScreen(
+                        onCargarOtro = {
+                            val intent = Intent(context, ScannerActivity::class.java)
+                            barcodeLauncher.launch(intent)
+                        },
+                        onBackToAdminHome = { currentScreen = "admin_home" }
+                    )
+                    "admin_error" -> ErrorScreen(
+                        onRetry = { currentScreen = "admin_add_product" },
+                        onBackToAdminHome = { currentScreen = "admin_home" }
+                    )
+                    "consumer_home" -> MainScreen(onLogout = { currentScreen = "role_selection" })
                 }
             }
         }
     }
 
     private fun trackUserActivity() {
-        FirebaseFirestore.getInstance().collection("stats").document("global").set(mapOf("active_users" to FieldValue.increment(1)), SetOptions.merge())
+        FirebaseFirestore.getInstance().collection("stats").document("global")
+            .set(mapOf("active_users" to FieldValue.increment(1)), SetOptions.merge())
     }
 }
 
-// --- Composables ---
-
 @Composable
-fun MainScreen(isWide: Boolean, onFavoritesClick: () -> Unit, onHistoryClick: () -> Unit, onLogout: () -> Unit) {
+fun ReportesScreen(viewModel: ReportesViewModel = viewModel(), onBack: () -> Unit) {
     val context = LocalContext.current
-    val barcodeLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { res ->
-        if (res.resultCode == Activity.RESULT_OK) {
-            val intent = Intent(context, Result::class.java).apply { putExtra("barcode", res.data?.getStringExtra("barcode_result")); putExtra("is_consumer", true) }
-            context.startActivity(intent)
+    Column(modifier = Modifier.fillMaxSize().background(Color(0xFF1A0B46)).padding(16.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White) }
+            Text("📄 Reportes", color = Color.White, style = MaterialTheme.typography.headlineMedium)
         }
-    }
-    
-    val bgColor = Color(0xFF1A0B46)
-    val buttonColor = Color(0xFFFFD54F) 
-
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(bgColor)
-            .padding(24.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.SpaceBetween
-    ) {
-        // Logo
-        Image(
-            painter = painterResource(R.drawable.logo_easy_price),
-            contentDescription = null,
-            modifier = Modifier.size(if (isWide) 320.dp else 250.dp).padding(top = 16.dp)
-        )
-
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            modifier = Modifier.fillMaxWidth(if (isWide) 0.7f else 1f)
-        ) {
-            // Main Scan Button
-            Button(
-                onClick = { barcodeLauncher.launch(Intent(context, ScannerActivity::class.java)) },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(100.dp),
-                shape = RoundedCornerShape(28.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = buttonColor)
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.Start,
-                    modifier = Modifier.fillMaxWidth().padding(start = 16.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.PhotoCamera,
-                        contentDescription = null,
-                        tint = Color.Black,
-                        modifier = Modifier.size(56.dp)
-                    )
-                    Spacer(Modifier.width(20.dp))
-                    Text(
-                        "Escanear Código",
-                        color = Color.Black,
-                        fontSize = 22.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-            }
-
-            Spacer(Modifier.height(40.dp))
-
-            // History and Favorites Row
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(20.dp)
-            ) {
-                ConsumerSquareButton(
-                    text = "Historial",
-                    icon = Icons.Default.FormatListBulleted,
-                    onClick = onHistoryClick,
-                    modifier = Modifier.weight(1f)
-                )
-                ConsumerSquareButton(
-                    text = "Favoritos",
-                    icon = Icons.Default.StarBorder,
-                    onClick = onFavoritesClick,
-                    modifier = Modifier.weight(1f)
-                )
-            }
-        }
-
-        // Exit Button at the bottom
-        Button(
-            onClick = onLogout,
-            modifier = Modifier
-                .width(180.dp)
-                .height(90.dp),
-            shape = RoundedCornerShape(28.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = buttonColor)
-        ) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                    contentDescription = null,
-                    tint = Color.Black,
-                    modifier = Modifier.size(40.dp)
-                )
-                Text("Salir", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-            }
-        }
-        Spacer(Modifier.height(8.dp))
-    }
-}
-
-@Composable
-fun ConsumerSquareButton(text: String, icon: ImageVector, onClick: () -> Unit, modifier: Modifier = Modifier) {
-    Button(
-        onClick = onClick,
-        modifier = modifier.height(110.dp),
-        shape = RoundedCornerShape(28.dp),
-        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFD54F))
-    ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-            Icon(icon, null, tint = Color.Black, modifier = Modifier.size(45.dp))
-            Spacer(Modifier.height(8.dp))
-            Text(text, color = Color.Black, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-        }
-    }
-}
-
-@Composable
-fun RoleSelectionScreen(isWide: Boolean, onAdminClick: () -> Unit, onConsumerClick: () -> Unit) {
-    Column(Modifier.fillMaxSize().background(Color(0xFF1A0B46)).padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-        Image(painterResource(R.drawable.logo_easy_price), null, Modifier.size(if (isWide) 250.dp else 220.dp).padding(bottom = 32.dp))
-        if (isWide) {
-            Row(Modifier.fillMaxWidth(0.8f), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                Box(Modifier.weight(1f)) { RoleButton("Administrador", Icons.Default.Person, onAdminClick) }
-                Box(Modifier.weight(1f)) { RoleButton("Consumidor", Icons.Default.ShoppingCart, onConsumerClick) }
-            }
-        } else {
-            RoleButton("Administrador", Icons.Default.Person, onAdminClick)
-            Spacer(Modifier.height(16.dp))
-            RoleButton("Consumidor", Icons.Default.ShoppingCart, onConsumerClick)
-        }
-    }
-}
-
-@Composable
-fun RoleButton(text: String, icon: ImageVector, onClick: () -> Unit) {
-    Button(onClick = onClick, Modifier.fillMaxWidth().height(70.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFD54F))) {
-        Row(verticalAlignment = Alignment.CenterVertically) { Icon(icon, null, tint = Color.Black); Spacer(Modifier.width(8.dp)); Text(text, color = Color.Black, fontSize = 18.sp, fontWeight = FontWeight.Bold) }
-    }
-}
-
-@Composable
-fun AdminLoginScreen(isWide: Boolean, onLoginClick: (String, String) -> Unit, onBack: () -> Unit) {
-    var user by remember { mutableStateOf("") }
-    var pass by remember { mutableStateOf("") }
-    var passwordVisible by remember { mutableStateOf(false) }
-    
-    val content = @Composable {
-        Column(Modifier.fillMaxWidth(if (isWide) 0.5f else 1f), horizontalAlignment = Alignment.CenterHorizontally) {
-            OutlinedTextField(
-                value = user,
-                onValueChange = { user = it },
-                label = { Text("Usuario", color = Color.White) },
-                modifier = Modifier.fillMaxWidth(),
-                leadingIcon = { Icon(Icons.Default.Person, contentDescription = "Usuario", tint = Color.White) },
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedTextColor = Color.White,
-                    unfocusedTextColor = Color.White,
-                    focusedBorderColor = Color(0xFF2EF2A3),
-                    unfocusedBorderColor = Color.White.copy(alpha = 0.5f)
-                ),
-                singleLine = true
-            )
-            Spacer(Modifier.height(16.dp))
-            OutlinedTextField(
-                value = pass,
-                onValueChange = { pass = it },
-                label = { Text("Contraseña", color = Color.White) },
-                visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
-                modifier = Modifier.fillMaxWidth(),
-                leadingIcon = { Icon(Icons.Default.Lock, contentDescription = "Contraseña", tint = Color.White) },
-                trailingIcon = {
-                    val icon = if (passwordVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff
-                    val description = if (passwordVisible) "Ocultar contraseña" else "Mostrar contraseña"
-                    IconButton(onClick = { passwordVisible = !passwordVisible }) {
-                        Icon(imageVector = icon, contentDescription = description, tint = Color.White)
-                    }
-                },
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedTextColor = Color.White,
-                    unfocusedTextColor = Color.White,
-                    focusedBorderColor = Color(0xFF2EF2A3),
-                    unfocusedBorderColor = Color.White.copy(alpha = 0.5f)
-                ),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                singleLine = true
-            )
-            Spacer(Modifier.height(32.dp))
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
-                Button(onClick = { onLoginClick(user, pass) }, modifier = Modifier.weight(1f).height(55.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2EF2A3))) { Text("Login", color = Color.Black, fontWeight = FontWeight.Bold) }
-                Spacer(Modifier.width(12.dp))
-                Button(onClick = onBack, modifier = Modifier.weight(1f).height(55.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFD54F))) { Text("Salir", color = Color.Black, fontWeight = FontWeight.Bold) }
-            }
-        }
-    }
-
-    if (isWide) {
-        Row(Modifier.fillMaxSize().background(Color(0xFF1A0B46)).padding(32.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
-            Image(painterResource(R.drawable.logo_easy_price), null, Modifier.size(200.dp).padding(end = 48.dp))
-            content()
-        }
-    } else {
-        Column(Modifier.fillMaxSize().background(Color(0xFF1A0B46)).padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-            Image(painterResource(R.drawable.logo_easy_price), null, Modifier.size(150.dp).padding(bottom = 32.dp))
-            content()
-        }
-    }
-}
-
-@Composable
-fun AdminHomeScreen(isWide: Boolean, onAdminScan: () -> Unit, onDatabaseClick: () -> Unit, onLogout: () -> Unit) {
-    Column(Modifier.fillMaxSize().background(Color(0xFF1A0B46)).padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-        Image(painterResource(R.drawable.logo_easy_price), null, Modifier.size(180.dp))
-        Spacer(Modifier.height(32.dp))
-        if (isWide) {
-            Row(Modifier.fillMaxWidth(0.8f), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                Button(onAdminScan, Modifier.weight(1.5f).height(100.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFD54F))) { Text("Cargar Producto", color = Color.Black, fontSize = 20.sp) }
-                AdminMenuButton("Base Datos", Icons.AutoMirrored.Filled.List, onDatabaseClick, Modifier.weight(1f))
-                AdminMenuButton("Salir", Icons.AutoMirrored.Filled.ArrowBack, onLogout, Modifier.weight(1f))
-            }
-        } else {
-            Button(onAdminScan, Modifier.fillMaxWidth().height(80.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFD54F))) { Text("Cargar Producto", color = Color.Black, fontSize = 20.sp) }
-            Spacer(Modifier.height(24.dp))
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                AdminMenuButton("Base Datos", Icons.AutoMirrored.Filled.List, onDatabaseClick, Modifier.weight(1f))
-                AdminMenuButton("Salir", Icons.AutoMirrored.Filled.ArrowBack, onLogout, Modifier.weight(1f))
-            }
-        }
-    }
-}
-
-@Composable
-fun AdminMenuButton(text: String, icon: ImageVector, onClick: () -> Unit, modifier: Modifier) {
-    Button(onClick = onClick, modifier = modifier.height(100.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFD54F))) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) { Icon(icon, null, tint = Color.Black); Text(text, color = Color.Black, fontSize = 12.sp) }
-    }
-}
-
-@Composable
-fun ManagementHomeScreen(isWide: Boolean, onLogout: () -> Unit, onDashboardClick: () -> Unit, onProductsClick: () -> Unit, onScansClick: () -> Unit, onTrendsClick: () -> Unit, onAiClick: () -> Unit, onReportsClick: () -> Unit) {
-    val bgColor = Color(0xFF1A0B46)
-    val exitButtonColor = Color(0xFFFFD54F)
-    
-    Column(
-        Modifier
-            .fillMaxSize()
-            .background(bgColor)
-            .padding(24.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        // Logo
-        Image(
-            painter = painterResource(R.drawable.logo_easy_price),
-            contentDescription = null,
-            modifier = Modifier.size(if (isWide) 160.dp else 140.dp).padding(top = 8.dp)
-        )
-        
-        Spacer(Modifier.height(12.dp))
-        
-        val buttons = listOf(
-            Triple("Dashboard", Icons.Filled.Dashboard, onDashboardClick),
-            Triple("Productos", Icons.Filled.Inventory2, onProductsClick),
-            Triple("Escaneos", Icons.Filled.QrCodeScanner, onScansClick),
-            Triple("Tendencias", Icons.Filled.TrendingUp, onTrendsClick),
-            Triple("Reportes", Icons.Filled.BarChart, onReportsClick),
-            Triple("Asistente IA", Icons.AutoMirrored.Filled.Chat, onAiClick)
-        )
-
-        LazyVerticalGrid(
-            columns = GridCells.Fixed(if (isWide) 3 else 2),
-            modifier = Modifier.weight(1f),
-            contentPadding = PaddingValues(horizontal = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            items(buttons) { (text, icon, onClick) ->
-                ManagementButton(text, icon, onClick)
-            }
-        }
-        
-        Spacer(Modifier.height(16.dp))
-        
-        // Exit Button
-        Button(
-            onClick = onLogout,
-            modifier = Modifier
-                .width(180.dp)
-                .height(110.dp),
-            shape = RoundedCornerShape(28.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = exitButtonColor)
-        ) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                    contentDescription = null,
-                    tint = Color.Black,
-                    modifier = Modifier.size(48.dp)
-                )
-                Text("Salir", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-            }
-        }
-        Spacer(Modifier.height(8.dp))
-    }
-}
-
-@Composable
-fun ManagementButton(text: String, icon: ImageVector, onClick: () -> Unit) {
-    Button(
-        onClick = onClick,
-        modifier = Modifier.fillMaxWidth().height(140.dp),
-        shape = RoundedCornerShape(32.dp),
-        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2EF2A3))
-    ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-            Icon(icon, null, tint = Color(0xFF555555), modifier = Modifier.size(56.dp))
-            Spacer(Modifier.height(4.dp))
-            Text(text, color = Color.Black, fontSize = 15.sp, fontWeight = FontWeight.Bold)
-        }
-    }
-}
-
-@Composable
-fun DashboardScreen(isWide: Boolean, viewModel: DashboardViewModel = viewModel(), reportesViewModel: ReportesViewModel = viewModel(), onBack: () -> Unit) {
-    val context = LocalContext.current
-    LaunchedEffect(Unit) { viewModel.loadStats() }
-    Column(Modifier.fillMaxSize().background(Color(0xFF1A0B46)).padding(16.dp).verticalScroll(rememberScrollState())) {
-        Row(
+        Spacer(modifier = Modifier.height(24.dp))
+        Card(
             modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) { 
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, null, tint = Color.White) }
-                Text("📊 Dashboard", color = Color.White, style = MaterialTheme.typography.headlineMedium) 
-            }
-            IconButton(onClick = { reportesViewModel.generarNuevoReporte(context) }) {
-                if (reportesViewModel.isGenerating) {
-                    CircularProgressIndicator(Modifier.size(24.dp), color = Color(0xFF2EF2A3))
+            colors = CardDefaults.cardColors(containerColor = Color(0xFF2EF2A3)),
+            shape = RoundedCornerShape(16.dp),
+            onClick = { viewModel.generarNuevoReporte(context) }
+        ) {
+            Row(modifier = Modifier.padding(24.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
+                if (viewModel.isGenerating) {
+                    CircularProgressIndicator(color = Color(0xFF1A0B46), modifier = Modifier.size(24.dp))
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Text("Generando...", color = Color(0xFF1A0B46), fontWeight = FontWeight.Bold)
                 } else {
-                    Icon(Icons.Default.Download, contentDescription = "Exportar Reporte", tint = Color(0xFF2EF2A3))
+                    Icon(Icons.Filled.Add, contentDescription = null, tint = Color(0xFF1A0B46))
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Text("Generar Reporte PDF", color = Color(0xFF1A0B46), fontWeight = FontWeight.Bold, fontSize = 18.sp)
                 }
             }
         }
-        
-        Spacer(Modifier.height(16.dp))
-        
-        // Filtros Temporales (Chips)
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            val filters = listOf("Hoy", "7D", "30D", "Año", "Historico")
-            filters.forEach { filter ->
-                val isSelected = viewModel.selectedFilter == filter
-                FilterChip(
-                    selected = isSelected,
-                    onClick = { viewModel.loadStats(filter) },
-                    label = { Text(filter, fontSize = 12.sp) },
-                    colors = FilterChipDefaults.filterChipColors(
-                        containerColor = Color.Transparent,
-                        labelColor = Color.White,
-                        selectedContainerColor = Color(0xFF2EF2A3),
-                        selectedLabelColor = Color.Black
-                    ),
-                    border = FilterChipDefaults.filterChipBorder(
-                        enabled = true,
-                        selected = isSelected,
-                        borderColor = Color.White.copy(alpha = 0.5f),
-                        selectedBorderColor = Color(0xFF2EF2A3),
-                        borderWidth = 1.dp
-                    )
-                )
-            }
-        }
-        
-        if (isWide) {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                StatCard("Escaneos", viewModel.totalScans.toString(), viewModel.scansTrend, Modifier.weight(1f))
-                StatCard("Usuarios", viewModel.activeUsers.toString(), viewModel.usersTrend, Modifier.weight(1f))
-                StatCard("Productos", viewModel.totalProducts.toString(), "", Modifier.weight(1f))
-            }
-            Spacer(Modifier.height(24.dp))
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                Box(Modifier.weight(1f)) { SimpleChart() }
-                Card(Modifier.weight(1f).height(150.dp), colors = CardDefaults.cardColors(containerColor = Color.White.copy(0.05f))) {
-                    Column(Modifier.padding(16.dp)) {
-                        Text("Top Productos", color = Color.White, fontWeight = FontWeight.Bold)
-                        viewModel.topProducts.take(3).forEach { Text("• $it", color = Color.White.copy(0.7f)) }
+        Spacer(modifier = Modifier.height(32.dp))
+        Text("Reportes Recientes", color = Color.White, style = MaterialTheme.typography.titleMedium)
+        Spacer(modifier = Modifier.height(16.dp))
+        LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            items(viewModel.reportsList) { report ->
+                Card(
+                    modifier = Modifier.fillMaxWidth().clickable { viewModel.openReport(context, report) },
+                    colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.1f)),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text(report, color = Color.White, modifier = Modifier.weight(1f))
+                        IconButton(onClick = { viewModel.shareReport(context, report) }) { Icon(Icons.Filled.Share, contentDescription = "Share", tint = Color(0xFF2EF2A3)) }
                     }
                 }
             }
-        } else {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                StatCard("Escaneos", viewModel.totalScans.toString(), viewModel.scansTrend, Modifier.weight(1f))
-                StatCard("Usuarios", viewModel.activeUsers.toString(), viewModel.usersTrend, Modifier.weight(1f))
-            }
-            Spacer(Modifier.height(24.dp)); SimpleChart()
         }
-
-        Spacer(Modifier.height(24.dp))
-        
-        // Notificaciones Críticas
-        Text("🔔 Alertas Críticas", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 18.sp)
-        Spacer(Modifier.height(8.dp))
-        viewModel.criticalAlerts.forEach { alert ->
-            Card(
-                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                colors = CardDefaults.cardColors(containerColor = Color(0xFFFFCDD2))
-            ) {
-                Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.Warning, contentDescription = null, tint = Color(0xFFB71C1C))
-                    Spacer(Modifier.width(12.dp))
-                    Text(alert, color = Color(0xFFB71C1C), fontSize = 14.sp)
-                }
-            }
-        }
-        
-        Button(onBack, Modifier.fillMaxWidth().padding(top = 32.dp).height(55.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFD54F))) { Text("Volver", color = Color.Black) }
     }
 }
 
 @Composable
-fun StatCard(t: String, v: String, trend: String, modifier: Modifier) {
-    Card(modifier.height(110.dp), colors = CardDefaults.cardColors(containerColor = Color(0xFF2EF2A3))) {
-        Column(Modifier.fillMaxSize().padding(8.dp), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(t, color = Color.Black, fontSize = 14.sp)
-            Text(v, color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 22.sp)
-            if (trend.isNotEmpty()) {
-                val isPositive = trend.startsWith("+")
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        if (isPositive) Icons.Default.TrendingUp else Icons.Default.TrendingDown,
-                        contentDescription = null,
-                        tint = if (isPositive) Color(0xFF1B5E20) else Color(0xFFB71C1C),
-                        modifier = Modifier.size(16.dp)
-                    )
-                    Spacer(Modifier.width(4.dp))
-                    Text(trend, color = if (isPositive) Color(0xFF1B5E20) else Color(0xFFB71C1C), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+fun AiAssistantScreen(viewModel: AsistenteIAViewModel = viewModel(), onBack: () -> Unit) {
+    var textInput by remember { mutableStateOf("") }
+    Column(modifier = Modifier.fillMaxSize().background(Color(0xFF1A0B46)).padding(16.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White) }
+            Text("💬 Asistente IA", color = Color.White, style = MaterialTheme.typography.headlineMedium)
+        }
+        Spacer(modifier = Modifier.height(16.dp))
+        Box(modifier = Modifier.weight(1f)) {
+            LazyColumn(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(bottom = 16.dp)) {
+                items(viewModel.messages) { message -> ChatBubble(text = message.first, isUser = message.second) }
+                if (viewModel.isTyping) { item { Text("EasyPrice IA está pensando...", color = Color(0xFF2EF2A3), fontSize = 12.sp, modifier = Modifier.padding(start = 12.dp)) } }
+            }
+        }
+        Row(modifier = Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            TextField(
+                value = textInput, onValueChange = { textInput = it }, modifier = Modifier.weight(1f),
+                placeholder = { Text("Escribe tu consulta...") },
+                colors = TextFieldDefaults.colors(focusedContainerColor = Color.White.copy(alpha = 0.1f), unfocusedContainerColor = Color.White.copy(alpha = 0.1f), focusedTextColor = Color.White, unfocusedTextColor = Color.White, cursorColor = Color(0xFF2EF2A3)),
+                shape = RoundedCornerShape(24.dp)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            FloatingActionButton(onClick = { if (textInput.isNotBlank()) { viewModel.sendMessage(textInput); textInput = "" } }, containerColor = Color(0xFF2EF2A3), contentColor = Color(0xFF1A0B46), shape = CircleShape, modifier = Modifier.size(56.dp)) { Icon(Icons.Default.Send, contentDescription = "Send") }
+        }
+    }
+}
+
+@Composable
+fun ChatBubble(text: String, isUser: Boolean) {
+    Box(modifier = Modifier.fillMaxWidth(), contentAlignment = if (isUser) Alignment.CenterEnd else Alignment.CenterStart) {
+        Card(
+            shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp, bottomStart = if (isUser) 16.dp else 4.dp, bottomEnd = if (isUser) 4.dp else 16.dp),
+            colors = CardDefaults.cardColors(containerColor = if (isUser) Color(0xFFFFD54F) else Color.White.copy(alpha = 0.1f)),
+            modifier = Modifier.widthIn(max = 280.dp)
+        ) { Text(text = text, modifier = Modifier.padding(12.dp), color = if (isUser) Color(0xFF1A0B46) else Color.White, fontSize = 15.sp) }
+    }
+}
+
+@Composable
+fun DashboardScreen(viewModel: DashboardViewModel = viewModel(), onBack: () -> Unit) {
+    val context = LocalContext.current
+    LaunchedEffect(Unit) {
+        Firebase.analytics.logEvent("view_dashboard", bundleOf("user_type" to "gerencia", "timestamp" to System.currentTimeMillis()))
+        viewModel.loadStats(context)
+    }
+    Column(modifier = Modifier.fillMaxSize().background(Color(0xFF1A0B46)).padding(16.dp).verticalScroll(rememberScrollState())) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White) }
+            Text("📊 Dashboard", color = Color.White, style = MaterialTheme.typography.headlineMedium)
+        }
+        Spacer(modifier = Modifier.height(24.dp))
+        if (viewModel.isLoading) {
+            Box(modifier = Modifier.fillMaxWidth().height(100.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = Color(0xFF2EF2A3)) }
+        } else {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                StatCard("Escaneos", viewModel.totalScans.toString(), Modifier.weight(1f))
+                StatCard("Usuarios", viewModel.activeUsers.toString(), Modifier.weight(1f))
+                StatCard("Productos", viewModel.totalProducts.toString(), Modifier.weight(1f))
+            }
+        }
+        Spacer(modifier = Modifier.height(32.dp))
+        Text("Actividad semanal", color = Color.White, style = MaterialTheme.typography.titleMedium)
+        Spacer(modifier = Modifier.height(16.dp))
+        SimpleChart()
+        Spacer(modifier = Modifier.height(32.dp))
+        Text("Top Productos", color = Color.White, style = MaterialTheme.typography.titleMedium)
+        Spacer(modifier = Modifier.height(16.dp))
+        Card(modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Color(0xFF2EF2A3).copy(alpha = 0.1f)), shape = RoundedCornerShape(16.dp)) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                if (viewModel.topProducts.isEmpty()) Text("No hay datos de escaneos aún", color = Color.Gray, fontSize = 14.sp)
+                else viewModel.topProducts.forEach {
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 4.dp)) {
+                        Text("🔥", fontSize = 18.sp)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(it, color = Color.White, fontSize = 16.sp)
+                    }
                 }
             }
+        }
+        Spacer(modifier = Modifier.height(40.dp))
+        Button(onClick = onBack, modifier = Modifier.fillMaxWidth().height(60.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFD54F)), shape = RoundedCornerShape(30.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null, tint = Color(0xFF1A0B46))
+                Spacer(modifier = Modifier.width(12.dp))
+                Text("Salir", color = Color(0xFF1A0B46), fontSize = 18.sp, fontWeight = FontWeight.Bold)
+            }
+        }
+        Spacer(modifier = Modifier.height(24.dp))
+    }
+}
+
+@Composable
+fun ProductosScreen(viewModel: ProductosViewModel = viewModel(), onBack: () -> Unit, onProductClick: (String) -> Unit) {
+    var searchText by remember { mutableStateOf("") }
+    val analytics = Firebase.analytics
+    LaunchedEffect(Unit) {
+        analytics.logEvent("view_product_list", null)
+        viewModel.loadProductos()
+    }
+    Column(modifier = Modifier.fillMaxSize().background(Color(0xFF1A0B46)).padding(16.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White) }
+            Text("📦 Productos", color = Color.White, style = MaterialTheme.typography.headlineMedium)
+        }
+        Spacer(modifier = Modifier.height(16.dp))
+        OutlinedTextField(
+            value = searchText, onValueChange = { searchText = it; analytics.logEvent("search_product", bundleOf("search_term" to it)) },
+            label = { Text("Buscar producto") }, modifier = Modifier.fillMaxWidth(),
+            colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Color.White, unfocusedTextColor = Color.White, focusedBorderColor = Color(0xFF2EF2A3), unfocusedBorderColor = Color.Gray, focusedLabelColor = Color(0xFF2EF2A3), unfocusedLabelColor = Color.Gray),
+            shape = RoundedCornerShape(12.dp)
+        )
+        Spacer(modifier = Modifier.height(16.dp))
+        if (viewModel.isLoading) Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = Color(0xFF2EF2A3)) }
+        else LazyColumn(modifier = Modifier.fillMaxSize()) {
+            items(viewModel.productos.filter { it.name.contains(searchText, ignoreCase = true) || it.marca?.contains(searchText, ignoreCase = true) == true }) { product ->
+                ProductItem(product) { analytics.logEvent("view_product_from_list", bundleOf("product_name" to product.name)); onProductClick(product.code) }
+            }
+        }
+    }
+}
+
+@Composable
+fun EscaneosScreen(viewModel: EscaneosViewModel = viewModel(), onBack: () -> Unit) {
+    LaunchedEffect(Unit) { viewModel.loadData() }
+    Column(modifier = Modifier.fillMaxSize().background(Color(0xFF1A0B46)).padding(16.dp).verticalScroll(rememberScrollState())) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White) }
+            Text("🔍 Escaneos", color = Color.White, style = MaterialTheme.typography.headlineMedium)
+        }
+        Spacer(modifier = Modifier.height(24.dp))
+        Text("Actividad semanal", color = Color.White, style = MaterialTheme.typography.titleMedium)
+        Spacer(modifier = Modifier.height(16.dp))
+        BarChart(viewModel.weeklyData)
+        Spacer(modifier = Modifier.height(32.dp))
+        Text("Top más escaneados", color = Color.White, style = MaterialTheme.typography.titleMedium)
+        Spacer(modifier = Modifier.height(16.dp))
+        if (viewModel.isLoading) CircularProgressIndicator(color = Color(0xFF2EF2A3))
+        else viewModel.topProductos.forEachIndexed { index, pair -> TopItem(index + 1, pair.first, pair.second) }
+        Spacer(modifier = Modifier.height(40.dp))
+        Button(onClick = onBack, modifier = Modifier.fillMaxWidth().height(60.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFD54F)), shape = RoundedCornerShape(30.dp)) { Text("Volver", color = Color(0xFF1A0B46), fontWeight = FontWeight.Bold) }
+    }
+}
+
+@Composable
+fun RealLineChart(data: List<Int>) {
+    AndroidView(
+        factory = { context ->
+            LineChart(context).apply {
+                description.isEnabled = false
+                legend.isEnabled = false
+                xAxis.setDrawGridLines(false)
+                axisLeft.setDrawGridLines(false)
+                axisRight.isEnabled = false
+                xAxis.position = com.github.mikephil.charting.components.XAxis.XAxisPosition.BOTTOM
+                xAxis.textColor = android.graphics.Color.WHITE
+                axisLeft.textColor = android.graphics.Color.WHITE
+                val entries = data.mapIndexed { index, value -> Entry(index.toFloat(), value.toFloat()) }
+                val dataSet = LineDataSet(entries, "Escaneos").apply {
+                    color = android.graphics.Color.parseColor("#2EF2A3")
+                    lineWidth = 3f
+                    setCircleColor(android.graphics.Color.parseColor("#FFD54F"))
+                    circleRadius = 5f
+                    setDrawCircleHole(false)
+                    valueTextColor = android.graphics.Color.WHITE
+                    valueTextSize = 10f
+                    setDrawFilled(true)
+                    fillColor = android.graphics.Color.parseColor("#2EF2A3")
+                    fillAlpha = 50
+                }
+                this.data = LineData(dataSet)
+                invalidate()
+            }
+        },
+        modifier = Modifier.fillMaxWidth().height(200.dp)
+    )
+}
+
+@Composable
+fun TendenciasScreen(viewModel: TendenciasViewModel = viewModel(), onBack: () -> Unit) {
+    LaunchedEffect(Unit) { viewModel.loadData() }
+    Column(modifier = Modifier.fillMaxSize().background(Color(0xFF1A0B46)).padding(16.dp).verticalScroll(rememberScrollState())) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White) }
+            Text("📈 Tendencias", color = Color.White, style = MaterialTheme.typography.headlineMedium)
+        }
+        Spacer(modifier = Modifier.height(24.dp))
+        Text("Actividad (últimos días)", color = Color.White, style = MaterialTheme.typography.titleMedium)
+        Spacer(modifier = Modifier.height(16.dp))
+        if (viewModel.weeklyData.isNotEmpty()) RealLineChart(viewModel.weeklyData)
+        else Box(modifier = Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
+            if (viewModel.isLoading) CircularProgressIndicator(color = Color(0xFF2EF2A3))
+            else Text("No hay datos históricos aún", color = Color.Gray)
+        }
+        Spacer(modifier = Modifier.height(32.dp))
+        Text("🔥 Productos en crecimiento", color = Color.White, style = MaterialTheme.typography.titleMedium)
+        Spacer(modifier = Modifier.height(16.dp))
+        if (viewModel.growthProducts.isEmpty()) Text("Cargando productos...", color = Color.Gray, modifier = Modifier.padding(8.dp))
+        else viewModel.growthProducts.forEach { GrowthItem(it.first, it.second, it.third) }
+        Spacer(modifier = Modifier.height(40.dp))
+        Button(onClick = onBack, modifier = Modifier.fillMaxWidth().height(60.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFD54F)), shape = RoundedCornerShape(30.dp)) { Text("Volver", color = Color(0xFF1A0B46), fontWeight = FontWeight.Bold) }
+    }
+}
+
+@Composable
+fun GrowthItem(name: String, current: Int, last: Int) {
+    val growth = current - last
+    Card(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp), colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.1f)), shape = RoundedCornerShape(12.dp)) {
+        Row(modifier = Modifier.padding(16.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+            Text(text = name, color = Color.White, fontWeight = FontWeight.Bold)
+            Text(text = if (growth >= 0) "▲ $growth" else "▼ ${Math.abs(growth)}", color = if (growth >= 0) Color(0xFF2EF2A3) else Color.Red, fontWeight = FontWeight.Bold)
+        }
+    }
+}
+
+@Composable
+fun BarChart(data: List<Int>) {
+    Card(modifier = Modifier.fillMaxWidth().height(150.dp), colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.05f)), shape = RoundedCornerShape(16.dp)) {
+        Row(modifier = Modifier.fillMaxSize().padding(16.dp), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.Bottom) {
+            data.forEach { Box(modifier = Modifier.width(24.dp).height((it * 2).dp).background(Color(0xFF2EF2A3), RoundedCornerShape(topStart = 4.dp, topEnd = 4.dp))) }
+        }
+    }
+}
+
+@Composable
+fun TopItem(rank: Int, name: String, count: Int) {
+    Card(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp), colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.1f)), shape = RoundedCornerShape(12.dp)) {
+        Row(modifier = Modifier.padding(16.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+            Text(text = "🥇 #$rank $name", color = Color.White, fontWeight = FontWeight.Bold)
+            Text(text = "$count scans", color = Color(0xFF2EF2A3))
+        }
+    }
+}
+
+@Composable
+fun ProductItem(product: Product, onClick: () -> Unit) {
+    Card(modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp).clickable { onClick() }, colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.1f)), shape = RoundedCornerShape(16.dp), border = BorderStroke(1.dp, Color.White.copy(alpha = 0.2f))) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(text = product.name, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text(text = product.marca ?: "Genérico", color = Color.Gray, fontSize = 14.sp)
+                Text(text = "$${product.price}", color = Color(0xFF2EF2A3), fontWeight = FontWeight.Bold, fontSize = 16.sp)
+            }
+        }
+    }
+}
+
+@Composable
+fun StatCard(title: String, value: String, modifier: Modifier = Modifier) {
+    Card(modifier = modifier.height(100.dp), colors = CardDefaults.cardColors(containerColor = Color(0xFF2EF2A3)), shape = RoundedCornerShape(16.dp), elevation = CardDefaults.cardElevation(4.dp)) {
+        Column(modifier = Modifier.fillMaxSize().padding(12.dp), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(title, color = Color(0xFF1A0B46), style = MaterialTheme.typography.labelMedium)
+            Text(value, color = Color(0xFF1A0B46), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
         }
     }
 }
 
 @Composable
 fun SimpleChart() {
-    Card(Modifier.fillMaxWidth().height(150.dp), colors = CardDefaults.cardColors(containerColor = Color.White.copy(0.05f))) {
-        Row(Modifier.fillMaxSize().padding(16.dp), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.Bottom) {
-            listOf(3, 6, 8, 5, 9, 7, 4).forEach { v -> Box(Modifier.width(20.dp).height((v * 10).dp).background(Color(0xFFFFD54F))) }
+    Card(modifier = Modifier.fillMaxWidth().height(150.dp), colors = CardDefaults.cardColors(containerColor = Color(0xFF2EF2A3).copy(alpha = 0.05f)), shape = RoundedCornerShape(16.dp)) {
+        Row(modifier = Modifier.fillMaxSize().padding(16.dp), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.Bottom) {
+            val values = listOf(3, 6, 8, 5, 9, 7, 4)
+            values.forEach { Box(modifier = Modifier.width(24.dp).height((it * 12).dp).background(Color(0xFFFFD54F), RoundedCornerShape(topStart = 4.dp, topEnd = 4.dp))) }
         }
-    }
-}
-
-@Composable
-fun ProductosScreen(isWide: Boolean, viewModel: ProductosViewModel = viewModel(), onBack: () -> Unit, onProductClick: (String) -> Unit) {
-    var query by remember { mutableStateOf("") }
-    LaunchedEffect(Unit) { viewModel.loadProductos() }
-    Column(Modifier.fillMaxSize().background(Color(0xFF1A0B46)).padding(16.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) { IconButton(onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, null, tint = Color.White) }; Text("📦 Productos", color = Color.White, style = MaterialTheme.typography.headlineMedium) }
-        TextField(query, { query = it }, label = { Text("Buscar...") }, modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp))
-        
-        val filteredList = viewModel.productos.filter { it.name.contains(query, true) }
-        
-        if (isWide) {
-            LazyVerticalGrid(columns = GridCells.Fixed(2), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(filteredList) { p ->
-                    ProductCard(p, onProductClick)
-                }
-            }
-        } else {
-            LazyColumn {
-                items(filteredList) { p ->
-                    ProductCard(p, onProductClick)
-                }
-            }
-        }
-    }
-}
-
-@Composable
-fun ProductCard(p: Product, onClick: (String) -> Unit) {
-    Card(Modifier.fillMaxWidth().padding(vertical = 4.dp).clickable { onClick(p.code) }) {
-        Row(Modifier.padding(16.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text(p.name, Modifier.weight(1f))
-            Text("$" + p.price.toString(), color = Color(0xFF2E7D32), fontWeight = FontWeight.Bold)
-        }
-    }
-}
-
-@Composable
-fun EscaneosScreen(v: EscaneosViewModel = viewModel(), onBack: () -> Unit) {
-    LaunchedEffect(Unit) { v.loadData() }
-    Column(Modifier.fillMaxSize().background(Color(0xFF1A0B46)).padding(16.dp).verticalScroll(rememberScrollState())) {
-        Row(verticalAlignment = Alignment.CenterVertically) { IconButton(onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, null, tint = Color.White) }; Text("🔍 Auditoría en Tiempo Real", color = Color.White, style = MaterialTheme.typography.headlineMedium) }
-        
-        Spacer(Modifier.height(24.dp))
-        
-        // Mapa de Calor Local
-        Text("📍 Actividad por Sucursal", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 18.sp)
-        Spacer(Modifier.height(8.dp))
-        BranchActivityChart(v.branchActivity)
-        
-        Spacer(Modifier.height(24.dp))
-        
-        // Horas Pico
-        Text("⏰ Horas Pico de Escaneo", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 18.sp)
-        Spacer(Modifier.height(8.dp))
-        PeakHoursChart(v.peakHoursData)
-        
-        Spacer(Modifier.height(24.dp))
-        
-        // Escaneos Fallidos
-        Text("❌ Escaneos Fallidos (Oro para Inventario)", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 18.sp)
-        Spacer(Modifier.height(8.dp))
-        FailedScansList(v.failedScans)
-
-        Spacer(Modifier.height(24.dp))
-        
-        // Top Productos (Anteriormente principal)
-        Text("🏆 Top Productos Escaneados", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 18.sp)
-        Spacer(Modifier.height(8.dp))
-        v.topProductos.forEachIndexed { i, p -> TopItem(i + 1, p.first, p.second) }
-        
-        Button(onBack, Modifier.fillMaxWidth().padding(top = 32.dp, bottom = 16.dp).height(55.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFD54F))) { Text("Volver", color = Color.Black) }
-    }
-}
-
-@Composable
-fun BranchActivityChart(data: List<Pair<String, Int>>) {
-    Card(Modifier.fillMaxWidth().height(250.dp), colors = CardDefaults.cardColors(containerColor = Color.White.copy(0.05f))) {
-        AndroidView(factory = { ctx ->
-            PieChart(ctx).apply {
-                description.isEnabled = false
-                legend.textColor = android.graphics.Color.WHITE
-                setHoleColor(android.graphics.Color.TRANSPARENT)
-                setCenterTextColor(android.graphics.Color.WHITE)
-                val entries = data.map { PieEntry(it.second.toFloat(), it.first) }
-                val dataSet = PieDataSet(entries, "").apply {
-                    colors = listOf(
-                        android.graphics.Color.parseColor("#2EF2A3"),
-                        android.graphics.Color.parseColor("#FFD54F"),
-                        android.graphics.Color.parseColor("#4FC3F7"),
-                        android.graphics.Color.parseColor("#BA68C8")
-                    )
-                    valueTextColor = android.graphics.Color.WHITE
-                    valueTextSize = 12f
-                }
-                this.data = PieData(dataSet)
-                invalidate()
-            }
-        }, modifier = Modifier.fillMaxSize().padding(16.dp))
-    }
-}
-
-@Composable
-fun PeakHoursChart(data: List<Int>) {
-    Card(Modifier.fillMaxWidth().height(200.dp), colors = CardDefaults.cardColors(containerColor = Color.White.copy(0.05f))) {
-        AndroidView(factory = { ctx ->
-            BarChart(ctx).apply {
-                description.isEnabled = false
-                legend.isEnabled = false
-                xAxis.textColor = android.graphics.Color.WHITE
-                xAxis.position = com.github.mikephil.charting.components.XAxis.XAxisPosition.BOTTOM
-                axisLeft.textColor = android.graphics.Color.WHITE
-                axisRight.isEnabled = false
-                
-                val entries = data.mapIndexed { i, v -> BarEntry(i.toFloat(), v.toFloat()) }
-                val dataSet = BarDataSet(entries, "Escaneos").apply {
-                    color = android.graphics.Color.parseColor("#FFD54F")
-                    setDrawValues(false)
-                }
-                this.data = BarData(dataSet)
-                invalidate()
-            }
-        }, modifier = Modifier.fillMaxSize().padding(16.dp))
-    }
-}
-
-@Composable
-fun FailedScansList(scans: List<String>) {
-    Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Color.White.copy(0.05f))) {
-        Column(Modifier.padding(16.dp)) {
-            if (scans.isEmpty()) {
-                Text("No hay escaneos fallidos registrados.", color = Color.White.copy(0.6f))
-            } else {
-                scans.forEach { barcode ->
-                    Row(
-                        Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(Icons.Default.ErrorOutline, null, tint = Color(0xFFFF5252), modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(8.dp))
-                        Text(barcode, color = Color.White, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace)
-                        Spacer(Modifier.weight(1f))
-                        Text("Pendiente", color = Color(0xFFFFD54F), fontSize = 12.sp)
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-fun BarChart(d: List<Int>) {
-    Card(Modifier.fillMaxWidth().height(150.dp), colors = CardDefaults.cardColors(containerColor = Color.White.copy(0.05f))) {
-        Row(Modifier.fillMaxSize().padding(16.dp), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.Bottom) {
-            d.forEach { valH -> Box(Modifier.width(24.dp).height((valH * 2).dp).background(Color(0xFF2EF2A3))) }
-        }
-    }
-}
-
-@Composable
-fun TopItem(r: Int, n: String, c: Int) {
-    Card(Modifier.fillMaxWidth().padding(vertical = 4.dp), colors = CardDefaults.cardColors(containerColor = Color(0xFF2EF2A3))) {
-        Row(Modifier.padding(16.dp), horizontalArrangement = Arrangement.SpaceBetween) { 
-            Text("#$r $n", color = Color.Black, fontWeight = FontWeight.Bold)
-            Text("$c scans", color = Color.Black.copy(0.7f)) 
-        }
-    }
-}
-
-@Composable
-fun TendenciasScreen(v: TendenciasViewModel = viewModel(), onBack: () -> Unit) {
-    LaunchedEffect(Unit) { v.loadData() }
-    Column(Modifier.fillMaxSize().background(Color(0xFF1A0B46)).padding(16.dp).verticalScroll(rememberScrollState())) {
-        Row(verticalAlignment = Alignment.CenterVertically) { IconButton(onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, null, tint = Color.White) }; Text("📈 Análisis Predictivo", color = Color.White, style = MaterialTheme.typography.headlineMedium) }
-        
-        Spacer(Modifier.height(24.dp))
-        
-        // 1. Productos "Hot" (>20% crecimiento)
-        Text("🔥 Productos 'Hot' (>20% crecimiento semanal)", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 18.sp)
-        Spacer(Modifier.height(8.dp))
-        if (v.hotProducts.isEmpty()) {
-            Text("No hay productos con crecimiento explosivo esta semana.", color = Color.White.copy(0.6f), fontSize = 14.sp)
-        } else {
-            v.hotProducts.forEach { (name, growth) ->
-                HotProductItem(name, growth)
-            }
-        }
-        
-        Spacer(Modifier.height(24.dp))
-        
-        // 2. Predicción de Agotamiento (Vista al Futuro)
-        Text("📉 Predicción de Agotamiento (Stock Crítico)", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 18.sp)
-        Spacer(Modifier.height(8.dp))
-        v.depletionPredictions.forEach { (name, days) ->
-            PredictionItem(name, days)
-        }
-        
-        Spacer(Modifier.height(24.dp))
-        
-        // 3. Días de la semana (Comparativa Visual)
-        Text("📅 Actividad Semanal: 'Leche Entera 1L'", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 18.sp)
-        Text("Comparativa de búsquedas por día de la semana", color = Color.White.copy(0.7f), fontSize = 12.sp)
-        Spacer(Modifier.height(8.dp))
-        WeeklyComparisonChart(v.selectedProductDailyData)
-
-        Spacer(Modifier.height(32.dp))
-        
-        // Tendencia General Histórica
-        Text("📈 Tendencia General de Escaneos", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 18.sp)
-        Spacer(Modifier.height(8.dp))
-        RealLineChart(v.weeklyData)
-        
-        Button(onBack, Modifier.fillMaxWidth().padding(top = 32.dp, bottom = 16.dp).height(55.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFD54F))) { Text("Volver", color = Color.Black) }
-    }
-}
-
-@Composable
-fun HotProductItem(name: String, growth: Double) {
-    Card(Modifier.fillMaxWidth().padding(vertical = 4.dp), colors = CardDefaults.cardColors(containerColor = Color(0xFF2EF2A3))) {
-        Row(Modifier.padding(16.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text(name, color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                Text("Tendencia alcista detectada", color = Color.Black.copy(0.7f), fontSize = 12.sp)
-            }
-            Text("▲ ${growth.toInt()}%", color = Color(0xFF1B5E20), fontWeight = FontWeight.ExtraBold, fontSize = 22.sp)
-        }
-    }
-}
-
-@Composable
-fun PredictionItem(name: String, days: Int) {
-    val statusColor = when {
-        days <= 2 -> Color(0xFFFF5252) // Crítico
-        days <= 4 -> Color(0xFFFFD54F) // Alerta
-        else -> Color(0xFF2EF2A3)      // Estable
-    }
-    Card(Modifier.fillMaxWidth().padding(vertical = 4.dp), colors = CardDefaults.cardColors(containerColor = Color.White.copy(0.1f))) {
-        Row(Modifier.padding(16.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text(name, color = Color.White, fontWeight = FontWeight.Medium)
-                Text("Basado en scans de hoy...", color = Color.White.copy(0.5f), fontSize = 11.sp)
-            }
-            Column(horizontalAlignment = Alignment.End) {
-                Text("Se agotará en", color = Color.White.copy(0.7f), fontSize = 10.sp)
-                Text("$days días", color = statusColor, fontWeight = FontWeight.Bold, fontSize = 18.sp)
-            }
-        }
-    }
-}
-
-@Composable
-fun WeeklyComparisonChart(data: List<Int>) {
-    val daysLabels = listOf("Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom")
-    Card(Modifier.fillMaxWidth().height(220.dp), colors = CardDefaults.cardColors(containerColor = Color.White.copy(0.05f))) {
-        AndroidView(factory = { ctx ->
-            BarChart(ctx).apply {
-                description.isEnabled = false
-                legend.isEnabled = false
-                
-                xAxis.apply {
-                    textColor = android.graphics.Color.WHITE
-                    position = com.github.mikephil.charting.components.XAxis.XAxisPosition.BOTTOM
-                    valueFormatter = IndexAxisValueFormatter(daysLabels)
-                    granularity = 1f
-                    setDrawGridLines(false)
-                }
-                
-                axisLeft.apply {
-                    textColor = android.graphics.Color.WHITE
-                    setDrawGridLines(true)
-                    gridColor = android.graphics.Color.parseColor("#33FFFFFF")
-                }
-                
-                axisRight.isEnabled = false
-                
-                val entries = data.mapIndexed { i, v -> BarEntry(i.toFloat(), v.toFloat()) }
-                val dataSet = BarDataSet(entries, "Escaneos").apply {
-                    colors = listOf(android.graphics.Color.parseColor("#2EF2A3"))
-                    valueTextColor = android.graphics.Color.WHITE
-                    valueTextSize = 10f
-                }
-                this.data = BarData(dataSet)
-                animateY(1000)
-                invalidate()
-            }
-        }, modifier = Modifier.fillMaxSize().padding(12.dp))
-    }
-}
-
-@Composable
-fun RealLineChart(chartData: List<Int>) {
-    AndroidView(factory = { ctx -> LineChart(ctx).apply {
-        description.isEnabled = false; legend.isEnabled = false
-        val entries = chartData.mapIndexed { i, v -> Entry(i.toFloat(), v.toFloat()) }
-        this.data = LineData(LineDataSet(entries, "S").apply { color = android.graphics.Color.parseColor("#2EF2A3"); lineWidth = 3f })
-        invalidate()
-    }}, modifier = Modifier.fillMaxWidth().height(200.dp))
-}
-
-@Composable
-fun GrowthItem(n: String, c: Int, l: Int) {
-    val g = c - l
-    Card(Modifier.fillMaxWidth().padding(vertical = 4.dp), colors = CardDefaults.cardColors(containerColor = Color.White.copy(0.1f))) {
-        Row(Modifier.padding(16.dp), horizontalArrangement = Arrangement.SpaceBetween) { Text(n, color = Color.White); Text(if (g >= 0) "▲ $g" else "▼ $g", color = if (g >= 0) Color.Green else Color.Red) }
-    }
-}
-
-@Composable
-fun AiAssistantScreen(v: AsistenteIAViewModel = viewModel(), onBack: () -> Unit) {
-    var queryInput by remember { mutableStateOf("") }
-    Column(Modifier.fillMaxSize().background(Color(0xFF1A0B46)).padding(16.dp)) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, null, tint = Color.White) }
-                Text("💬 IA Asistente", color = Color.White, style = MaterialTheme.typography.headlineMedium)
-            }
-            
-            // Botón de Resumen Ejecutivo
-            Button(
-                onClick = { 
-                    val summary = v.generateSummary()
-                    v.messages.add(summary to false)
-                },
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2EF2A3)),
-                shape = RoundedCornerShape(12.dp),
-                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
-            ) {
-                Text("Resumen Diario", color = Color.Black, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-            }
-        }
-        
-        LazyColumn(Modifier.weight(1f).padding(vertical = 16.dp)) {
-            items(v.messages) { m -> ChatBubble(m.first, m.second) }
-            if (v.isTyping) {
-                item {
-                    Text("IA escribiendo...", color = Color.White.copy(0.6f), fontSize = 12.sp, modifier = Modifier.padding(start = 12.dp))
-                }
-            }
-        }
-        
-        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            TextField(
-                queryInput,
-                { queryInput = it },
-                Modifier.weight(1f),
-                shape = RoundedCornerShape(24.dp),
-                placeholder = { Text("Pregunta algo como '¿Cuál es el más buscado?'") },
-                colors = TextFieldDefaults.colors(
-                    focusedContainerColor = Color.White.copy(0.9f),
-                    unfocusedContainerColor = Color.White.copy(0.9f)
-                )
-            )
-            FloatingActionButton(
-                onClick = { 
-                    if (queryInput.isNotBlank()) { 
-                        v.sendMessage(queryInput)
-                        queryInput = "" 
-                    } 
-                },
-                containerColor = Color(0xFF2EF2A3),
-                modifier = Modifier.padding(start = 8.dp)
-            ) {
-                Icon(Icons.AutoMirrored.Filled.Send, null)
-            }
-        }
-    }
-}
-
-@Composable
-fun ChatBubble(t: String, u: Boolean) {
-    Box(Modifier.fillMaxWidth().padding(vertical = 4.dp), contentAlignment = if (u) Alignment.CenterEnd else Alignment.CenterStart) {
-        Card(
-            shape = RoundedCornerShape(
-                topStart = 16.dp,
-                topEnd = 16.dp,
-                bottomStart = if (u) 16.dp else 0.dp,
-                bottomEnd = if (u) 0.dp else 16.dp
-            ),
-            colors = CardDefaults.cardColors(containerColor = if (u) Color(0xFFFFD54F) else Color.White.copy(0.1f))
-        ) {
-            Text(t, Modifier.padding(12.dp), color = if (u) Color.Black else Color.White)
-        }
-    }
-}
-
-@Composable
-fun ReportesScreen(v: ReportesViewModel = viewModel(), onBack: () -> Unit) {
-    val context = LocalContext.current
-    Column(Modifier.fillMaxSize().background(Color(0xFF1A0B46)).padding(16.dp).verticalScroll(rememberScrollState())) {
-        Row(verticalAlignment = Alignment.CenterVertically) { 
-            IconButton(onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, null, tint = Color.White) }
-            Text("📄 Reportes y Legal", color = Color.White, style = MaterialTheme.typography.headlineMedium) 
-        }
-
-        Spacer(Modifier.height(24.dp))
-
-        // Filtro de Columnas
-        Text("⚙️ Configuración de Columnas", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 18.sp)
-        Card(Modifier.fillMaxWidth().padding(top = 8.dp), colors = CardDefaults.cardColors(containerColor = Color.White.copy(0.05f))) {
-            Column(Modifier.padding(16.dp)) {
-                ColumnRowSelection("Precio", v.includePrice) { v.includePrice = it }
-                ColumnRowSelection("Stock", v.includeStock) { v.includeStock = it }
-                ColumnRowSelection("Categoría", v.includeCategory) { v.includeCategory = it }
-                ColumnRowSelection("Código Barras", v.includeCode) { v.includeCode = it }
-            }
-        }
-
-        Spacer(Modifier.height(24.dp))
-
-        // Formatos de Exportación
-        Text("📥 Exportar Reporte Actual", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 18.sp)
-        Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(
-                onClick = { v.generarReportePdf(context) },
-                modifier = Modifier.weight(1f).height(60.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2EF2A3))
-            ) {
-                if (v.isGenerating) CircularProgressIndicator(Modifier.size(24.dp), color = Color.Black)
-                else Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.PictureAsPdf, null, tint = Color.Black)
-                    Spacer(Modifier.width(8.dp))
-                    Text("PDF", color = Color.Black, fontWeight = FontWeight.Bold)
-                }
-            }
-            Button(
-                onClick = { v.generarReporteExcel(context) },
-                modifier = Modifier.weight(1f).height(60.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFD54F))
-            ) {
-                if (v.isGenerating) CircularProgressIndicator(Modifier.size(24.dp), color = Color.Black)
-                else Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.TableChart, null, tint = Color.Black)
-                    Spacer(Modifier.width(8.dp))
-                    Text("Excel/CSV", color = Color.Black, fontWeight = FontWeight.Bold)
-                }
-            }
-        }
-
-        Spacer(Modifier.height(24.dp))
-
-        // Programación Automática
-        Text("🕒 Programación Automática", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 18.sp)
-        Card(Modifier.fillMaxWidth().padding(top = 8.dp), colors = CardDefaults.cardColors(containerColor = Color.White.copy(0.05f))) {
-            Column(Modifier.padding(16.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("Enviar reporte todos los lunes a las 8 AM", color = Color.White, modifier = Modifier.weight(1f))
-                    Switch(checked = v.scheduleEnabled, onCheckedChange = { v.toggleSchedule(it, context) })
-                }
-                if (v.scheduleEnabled) {
-                    Spacer(Modifier.height(8.dp))
-                    OutlinedTextField(
-                        value = v.targetEmail,
-                        onValueChange = { v.targetEmail = it },
-                        label = { Text("Email de Gerencia") },
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Color.White, unfocusedTextColor = Color.White)
-                    )
-                }
-            }
-        }
-
-        Spacer(Modifier.height(24.dp))
-
-        // Lista de Reportes Generados
-        Text("📚 Historial de Reportes", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 18.sp)
-        Column(Modifier.padding(top = 8.dp)) {
-            v.reportsList.forEach { r ->
-                Card(
-                    Modifier.fillMaxWidth().padding(vertical = 4.dp).clickable { v.openReport(context, r) },
-                    colors = CardDefaults.cardColors(containerColor = Color.White.copy(0.1f))
-                ) {
-                    Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            if (r.endsWith(".pdf")) Icons.Default.PictureAsPdf else Icons.Default.TableChart,
-                            contentDescription = null,
-                            tint = if (r.endsWith(".pdf")) Color(0xFF2EF2A3) else Color(0xFFFFD54F)
-                        )
-                        Spacer(Modifier.width(12.dp))
-                        Text(r, Modifier.weight(1f), color = Color.White, fontSize = 12.sp)
-                        IconButton(onClick = { v.shareReport(context, r) }) { 
-                            Icon(Icons.Default.Share, null, tint = Color.White.copy(0.7f)) 
-                        }
-                    }
-                }
-            }
-        }
-        
-        Spacer(Modifier.height(32.dp))
-    }
-}
-
-@Composable
-fun ColumnRowSelection(text: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
-    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-        Checkbox(checked = checked, onCheckedChange = onCheckedChange, colors = CheckboxDefaults.colors(checkmarkColor = Color.Black, checkedColor = Color(0xFF2EF2A3)))
-        Text(text, color = Color.White)
     }
 }
 
 @Composable
 fun DatabaseScreen(onProductClick: (String) -> Unit, onBackToAdminHome: () -> Unit) {
-    var list by remember { mutableStateOf<List<Product>>(emptyList()) }
-    var isLoading by remember { mutableStateOf(false) }
-
+    val db = FirebaseFirestore.getInstance()
+    var productsList by remember { mutableStateOf<List<Product>>(emptyList()) }
+    var isLoading by remember { mutableStateOf(true) }
+    val context = LocalContext.current
     LaunchedEffect(Unit) {
-        isLoading = true
-        FirebaseFirestore.getInstance().collection("products").get()
-            .addOnSuccessListener { result ->
-                list = result.mapNotNull { doc ->
-                    try {
-                        Product(
-                            name = doc.getString("name") ?: "",
-                            price = doc.getDouble("price") ?: 0.0,
-                            code = doc.getString("codigo") ?: "",
-                            marca = doc.getString("marca") ?: "",
-                            categoria = doc.getString("categoria") ?: "",
-                            subcategoria = doc.getString("subcategoria") ?: "",
-                            description = doc.getString("descripcion") ?: "",
-                            quantity = doc.getLong("quantity")?.toInt() ?: 100
-                        )
-                    } catch (e: Exception) {
-                        null
-                    }
-                }
-                isLoading = false
+        db.collection("products").get().addOnSuccessListener { documents ->
+            productsList = documents.mapNotNull { doc ->
+                try { Product(name = doc.getString("name") ?: "Sin nombre", price = (doc.get("price") as? Number)?.toDouble() ?: 0.0, code = doc.getString("codigo") ?: "", categoria = doc.getString("categoria") ?: "Otros", subcategoria = doc.getString("subcategoria") ?: "") }
+                catch (e: Exception) { null }
             }
-            .addOnFailureListener {
-                isLoading = false
-            }
+            isLoading = false
+        }.addOnFailureListener { Toast.makeText(context, "Error al conectar con la base de datos", Toast.LENGTH_SHORT).show(); isLoading = false }
     }
-
-    Column(Modifier.fillMaxSize().background(Color(0xFF1E2A35)).padding(16.dp)) {
-        Text("Base de Datos", color = Color.White, style = MaterialTheme.typography.headlineSmall)
-        
-        if (isLoading) {
-            Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator(color = Color.White)
-            }
-        } else {
-            LazyColumn(Modifier.weight(1f).padding(top = 16.dp)) {
-                items(list) { p ->
-                    Card(Modifier.fillMaxWidth().padding(vertical = 4.dp).clickable { onProductClick(p.code) }) {
-                        Row(Modifier.padding(16.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                            Text(p.name, Modifier.weight(1f))
-                            Icon(Icons.Default.Edit, null)
+    Column(modifier = Modifier.fillMaxSize().background(Color(0xFF1E2A35)).padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        Image(painter = painterResource(id = R.drawable.logo_easy_price), contentDescription = "Logo", modifier = Modifier.size(150.dp).padding(bottom = 16.dp), contentScale = ContentScale.Fit)
+        Card(modifier = Modifier.fillMaxWidth().weight(1f), shape = RoundedCornerShape(28.dp), colors = CardDefaults.cardColors(containerColor = Color.White), elevation = CardDefaults.cardElevation(4.dp)) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text("Productos.", fontSize = 18.sp, fontWeight = FontWeight.Bold, textDecoration = TextDecoration.Underline, modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center, color = Color(0xFF1A237E))
+                Spacer(modifier = Modifier.height(16.dp))
+                if (isLoading) Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = Color(0xFF1A237E)) }
+                else {
+                    val groupedProducts = productsList.groupBy { it.categoria ?: "Otros" }
+                    LazyColumn(modifier = Modifier.fillMaxSize()) {
+                        groupedProducts.forEach { (category, products) ->
+                            item { Text(text = "$category:", color = Color(0xFF1A237E), fontWeight = FontWeight.Bold, fontSize = 16.sp, textDecoration = TextDecoration.Underline, modifier = Modifier.padding(top = 12.dp, bottom = 8.dp)) }
+                            items(products) { product -> ProductListItemShort(product, onProductClick) }
                         }
                     }
                 }
             }
         }
+        Spacer(modifier = Modifier.height(16.dp))
+        Button(onClick = onBackToAdminHome, modifier = Modifier.fillMaxWidth(0.8f).height(55.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF59E689)), shape = RoundedCornerShape(16.dp)) { Text("Volver al Inicio", color = Color.Black, fontWeight = FontWeight.Bold) }
+    }
+}
 
-        Button(onClick = onBackToAdminHome, modifier = Modifier.fillMaxWidth().padding(top = 16.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF59E689))) {
-            Text("Volver")
+@Composable
+fun ProductListItemShort(product: Product, onClick: (String) -> Unit) {
+    Card(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp), shape = RoundedCornerShape(4.dp), border = BorderStroke(1.dp, Color.LightGray), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+        Row(modifier = Modifier.padding(12.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+            Text(text = product.name, fontWeight = FontWeight.SemiBold, fontSize = 15.sp, color = Color.Black, modifier = Modifier.weight(1f))
+            IconButton(onClick = { onClick(product.code) }) { Icon(imageVector = Icons.Default.Edit, contentDescription = "Editar", tint = Color.Gray, modifier = Modifier.size(22.dp)) }
         }
     }
 }
 
 @Composable
-fun ProductExistsScreen(onViewProduct: () -> Unit, onBackToAdminHome: () -> Unit) {
-    Column(Modifier.fillMaxSize().background(Color(0xFF1A0B46)).padding(24.dp), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
-        Icon(Icons.Default.Face, null, Modifier.size(100.dp), tint = Color.White); Text("Producto existente", color = Color.White)
-        Button(onClick = onViewProduct, modifier = Modifier.padding(top = 24.dp).fillMaxWidth()) { Text("Ver Detalles") }
-        TextButton(onClick = onBackToAdminHome) { Text("Volver", color = Color.White) }
+fun AdminHomeScreen(onAdminScan: () -> Unit, onDatabaseClick: () -> Unit, onLogout: () -> Unit) {
+    Column(modifier = Modifier.fillMaxSize().background(Color(0xFF1A0B46)).padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+        Image(painter = painterResource(id = R.drawable.logo_easy_price), contentDescription = "Logo", modifier = Modifier.size(280.dp).padding(bottom = 60.dp), contentScale = ContentScale.Fit)
+        Button(onClick = onAdminScan, modifier = Modifier.fillMaxWidth().height(100.dp), shape = RoundedCornerShape(30.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFD54F))) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(painter = painterResource(id = R.drawable.ic_camera), contentDescription = null, tint = Color.Black, modifier = Modifier.size(60.dp))
+                Spacer(modifier = Modifier.width(16.dp))
+                Text("Cargar Producto", color = Color(0xFF1A0B46), fontSize = 24.sp, fontWeight = FontWeight.Bold)
+            }
+        }
+        Spacer(modifier = Modifier.height(40.dp))
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            AdminMenuButton(text = "Base de Datos", icon = Icons.Default.List, onClick = onDatabaseClick, modifier = Modifier.weight(1f))
+            AdminMenuButton(text = "Salir", icon = Icons.AutoMirrored.Filled.ArrowBack, onClick = onLogout, modifier = Modifier.weight(1f))
+        }
+    }
+}
+
+@Composable
+fun AdminMenuButton(text: String, icon: ImageVector, onClick: () -> Unit, modifier: Modifier) {
+    Button(onClick = onClick, modifier = modifier.height(110.dp), shape = RoundedCornerShape(30.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFD54F))) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Icon(imageVector = icon, contentDescription = null, tint = Color(0xFF757575), modifier = Modifier.size(50.dp))
+            Text(text = text, color = Color(0xFF1A0B46), fontSize = 14.sp, fontWeight = FontWeight.Bold)
+        }
+    }
+}
+
+@Composable
+fun ManagementHomeScreen(onLogout: () -> Unit, onDashboardClick: () -> Unit, onProductsClick: () -> Unit, onScansClick: () -> Unit, onTrendsClick: () -> Unit, onAiClick: () -> Unit = {}, onReportsClick: () -> Unit = {}) {
+    Column(modifier = Modifier.fillMaxSize().background(Color(0xFF1A0B46)).padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        Spacer(modifier = Modifier.height(20.dp))
+        Image(painter = painterResource(id = R.drawable.logo_easy_price), contentDescription = "Logo", modifier = Modifier.size(160.dp), contentScale = ContentScale.Fit)
+        Spacer(modifier = Modifier.height(20.dp))
+        Column(modifier = Modifier.fillMaxWidth()) {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                ManagementButton(text = "Dashboard", icon = Icons.Filled.Dashboard, modifier = Modifier.weight(1f), onClick = onDashboardClick)
+                ManagementButton(text = "Products", icon = Icons.Filled.Inventory, modifier = Modifier.weight(1f), onClick = onProductsClick)
+            }
+            Spacer(modifier = Modifier.height(16.dp))
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                ManagementButton(text = "Escaneos", icon = Icons.Filled.QrCodeScanner, modifier = Modifier.weight(1f), onClick = onScansClick)
+                ManagementButton(text = "Tendencias", icon = Icons.Filled.ShowChart, modifier = Modifier.weight(1f), onClick = onTrendsClick)
+            }
+            Spacer(modifier = Modifier.height(16.dp))
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                ManagementButton(text = "Reportes", icon = Icons.Filled.Assessment, modifier = Modifier.weight(1f), onClick = onReportsClick)
+                ManagementButton(text = "Asistente IA", icon = Icons.Filled.Chat, modifier = Modifier.weight(1f), onClick = onAiClick)
+            }
+        }
+        Spacer(modifier = Modifier.weight(1f))
+        Button(onClick = onLogout, modifier = Modifier.width(140.dp).height(80.dp), shape = RoundedCornerShape(25.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFD54F))) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Icon(imageVector = Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null, tint = Color(0xFF757575), modifier = Modifier.size(40.dp))
+                Text("Salir", color = Color(0xFF1A0B46), fontSize = 16.sp, fontWeight = FontWeight.Bold)
+            }
+        }
+    }
+}
+
+@Composable
+fun ManagementButton(text: String, icon: ImageVector, modifier: Modifier, onClick: () -> Unit = {}) {
+    Button(onClick = onClick, modifier = modifier.height(120.dp), shape = RoundedCornerShape(28.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2EF2A3))) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Icon(imageVector = icon, contentDescription = null, tint = Color(0xFF757575), modifier = Modifier.size(50.dp))
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(text = text, color = Color(0xFF1A0B46), fontSize = 14.sp, fontWeight = FontWeight.Bold)
+        }
     }
 }
 
 @Composable
 fun SuccessScreen(onCargarOtro: () -> Unit, onBackToAdminHome: () -> Unit) {
-    Column(Modifier.fillMaxSize().background(Color(0xFF1A0B46)).padding(24.dp), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
-        Icon(Icons.Default.Check, null, Modifier.size(100.dp), tint = Color.Green); Text("¡Éxito!", color = Color.White, fontSize = 24.sp)
-        Button(onClick = onCargarOtro, modifier = Modifier.padding(top = 32.dp).fillMaxWidth()) { Text("Cargar Otro") }
-        TextButton(onClick = onBackToAdminHome) { Text("Inicio", color = Color.White) }
+    Column(modifier = Modifier.fillMaxSize().background(Color(0xFF1E2A35)).padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+        Image(painter = painterResource(id = R.drawable.logo_easy_price), contentDescription = "Logo", modifier = Modifier.size(200.dp).padding(bottom = 32.dp))
+        Card(modifier = Modifier.fillMaxWidth().height(380.dp), shape = RoundedCornerShape(32.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+            Column(modifier = Modifier.fillMaxSize().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+                Text("Producto cargado exitosamente", fontSize = 22.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, color = Color.Black)
+                Spacer(modifier = Modifier.height(40.dp))
+                Box(modifier = Modifier.size(140.dp).border(6.dp, Color(0xFF4CAF50), CircleShape), contentAlignment = Alignment.Center) { Icon(imageVector = Icons.Default.Check, contentDescription = null, tint = Color(0xFF4CAF50), modifier = Modifier.size(90.dp)) }
+                Spacer(modifier = Modifier.height(40.dp))
+                Button(onClick = onCargarOtro, modifier = Modifier.fillMaxWidth().height(60.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00E5FF)), shape = RoundedCornerShape(30.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("Cargar otro producto", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Icon(Icons.Default.Add, contentDescription = null, tint = Color.Black)
+                    }
+                }
+            }
+        }
+        Spacer(modifier = Modifier.height(32.dp))
+        Button(onClick = onBackToAdminHome, modifier = Modifier.fillMaxWidth(0.7f).height(55.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF69F0AE)), shape = RoundedCornerShape(14.dp)) { Text("Volver al Inicio", color = Color.Black, fontWeight = FontWeight.Bold) }
     }
 }
 
 @Composable
 fun ErrorScreen(onRetry: () -> Unit, onBackToAdminHome: () -> Unit) {
-    Column(Modifier.fillMaxSize().background(Color(0xFF1A0B46)).padding(24.dp), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
-        Icon(Icons.Default.Close, null, Modifier.size(100.dp), tint = Color.Red); Text("Error al cargar", color = Color.White)
-        Button(onClick = onRetry, modifier = Modifier.padding(top = 32.dp).fillMaxWidth()) { Text("Reintentar") }
-        TextButton(onClick = onBackToAdminHome) { Text("Inicio", color = Color.White) }
+    Column(modifier = Modifier.fillMaxSize().background(Color(0xFF1E2A35)).padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+        Image(painter = painterResource(id = R.drawable.logo_easy_price), contentDescription = "Logo", modifier = Modifier.size(200.dp).padding(bottom = 32.dp))
+        Card(modifier = Modifier.fillMaxWidth().height(380.dp), shape = RoundedCornerShape(32.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+            Column(modifier = Modifier.fillMaxSize().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+                Text("Error al cargar\nProducto", fontSize = 22.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, color = Color.Black)
+                Spacer(modifier = Modifier.height(40.dp))
+                Box(modifier = Modifier.size(140.dp).border(6.dp, Color.Red, CircleShape), contentAlignment = Alignment.Center) { Icon(imageVector = Icons.Default.Close, contentDescription = null, tint = Color.Red, modifier = Modifier.size(90.dp)) }
+                Spacer(modifier = Modifier.height(40.dp))
+                Button(onClick = onRetry, modifier = Modifier.fillMaxWidth().height(60.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00E5FF)), shape = RoundedCornerShape(30.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Refresh, contentDescription = null, tint = Color.Black)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Reintentar", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                    }
+                }
+            }
+        }
+        Spacer(modifier = Modifier.height(32.dp))
+        Button(onClick = onBackToAdminHome, modifier = Modifier.fillMaxWidth(0.7f).height(55.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF69F0AE)), shape = RoundedCornerShape(14.dp)) { Text("Volver al Inicio", color = Color.Black, fontWeight = FontWeight.Bold) }
     }
 }
 
 @Composable
+fun ProductExistsScreen(onViewProduct: () -> Unit, onBackToAdminHome: () -> Unit) {
+    Column(modifier = Modifier.fillMaxSize().background(Color(0xFF1E2A35)).padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+        Image(painter = painterResource(id = R.drawable.logo_easy_price), contentDescription = "Logo", modifier = Modifier.size(200.dp).padding(bottom = 24.dp))
+        Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(28.dp), colors = CardDefaults.cardColors(containerColor = Color.White), elevation = CardDefaults.cardElevation(8.dp)) {
+            Column(modifier = Modifier.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                Text("Producto ya existente", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Color.Black)
+                Spacer(modifier = Modifier.height(24.dp))
+                Icon(imageVector = Icons.Default.Face, contentDescription = null, tint = Color.Gray, modifier = Modifier.size(120.dp))
+                Spacer(modifier = Modifier.height(24.dp))
+                Text("El codigo escaneado ya se encuentra registrado en la base de datos", textAlign = TextAlign.Center, fontSize = 16.sp, color = Color.Black)
+                Spacer(modifier = Modifier.height(32.dp))
+                Button(onClick = onViewProduct, modifier = Modifier.fillMaxWidth().height(55.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00E5FF)), shape = RoundedCornerShape(28.dp)) { Text("Ver Producto", color = Color.Red, fontWeight = FontWeight.Bold, fontSize = 16.sp) }
+            }
+        }
+        Spacer(modifier = Modifier.height(32.dp))
+        Button(onClick = onBackToAdminHome, modifier = Modifier.fillMaxWidth(0.7f).height(55.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF69F0AE)), shape = RoundedCornerShape(14.dp)) { Text("Volver al Inicio", color = Color.Black, fontWeight = FontWeight.Bold) }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
 fun AddProductScreen(barcode: String, onProductLoaded: () -> Unit, onError: () -> Unit, onCancel: () -> Unit, onBackToAdminHome: () -> Unit) {
-    var n by remember { mutableStateOf("") }; var p by remember { mutableStateOf("") }
-    Column(Modifier.fillMaxSize().background(Color(0xFF1A0B46)).padding(16.dp).verticalScroll(rememberScrollState())) {
-        Text("Cargar Producto: $barcode", color = Color.White, fontSize = 20.sp)
-        TextField(n, { n = it }, label = { Text("Nombre") }, modifier = Modifier.fillMaxWidth().padding(top = 16.dp))
-        TextField(p, { p = it }, label = { Text("Precio") }, modifier = Modifier.fillMaxWidth().padding(top = 8.dp), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
-        Button(onClick = { 
-            val productMap = mapOf("codigo" to barcode, "name" to n, "price" to (p.toDoubleOrNull() ?: 0.0))
-            FirebaseFirestore.getInstance().collection("products").add(productMap).addOnSuccessListener { onProductLoaded() }.addOnFailureListener { onError() } 
-        }, modifier = Modifier.fillMaxWidth().padding(top = 24.dp).height(55.dp)) { Text("Guardar") }
-        TextButton(onClick = onCancel, modifier = Modifier.fillMaxWidth()) { Text("Cancelar", color = Color.Red) }
-        TextButton(onClick = onBackToAdminHome, modifier = Modifier.fillMaxWidth()) { Text("Volver", color = Color.White) }
+    val db = FirebaseFirestore.getInstance()
+    val context = LocalContext.current
+    var nombre by remember { mutableStateOf("") }
+    var marca by remember { mutableStateOf("") }
+    var precio by remember { mutableStateOf("") }
+    var categoria by remember { mutableStateOf("") }
+    var subCategoria by remember { mutableStateOf("") }
+    var descripcion by remember { mutableStateOf("") }
+    var isLoading by remember { mutableStateOf(false) }
+    val categoriesMap = mapOf(
+        "Alimentos Frescos y Perecederos" to listOf("Frutas y Verduras", "Carnicería", "Pescadería", "Fiambrería y Quesos", "Panadería y Pastelería"),
+        "Lácteos y Refrigerados" to listOf("Lácteos", "Huevos", "Pastas Frescas"),
+        "Almacén (Alimentos Secos)" to listOf("Infusiones", "Despensa", "Aceites y Condimentos", "Enlatados y Conservas", "Desayuno y Merienda"),
+        "Bebidas" to listOf("Sin Alcohol", "Con Alcohol"),
+        "Congelados" to listOf("Comidas Listas", "Vegetales Congelados", "Helados"),
+        "Limpieza y Cuidado del Hogar" to listOf("Ropa", "Ambientes", "Papelería", "Vajilla"),
+        "Perfumería y Cuidado Personal" to listOf("Higiene", "Bucal", "Cuidado Corporal"),
+        "Otros (Categorías Especiales)" to listOf("Mascotas", "Bebés", "Electro y Bazar")
+    )
+    var expandedCategory by remember { mutableStateOf(false) }
+    var expandedSubCategory by remember { mutableStateOf(false) }
+    Column(modifier = Modifier.fillMaxSize().background(Color(0xFF1E2A35)).padding(16.dp).verticalScroll(rememberScrollState()), horizontalAlignment = Alignment.CenterHorizontally) {
+        Image(painter = painterResource(id = R.drawable.logo_easy_price), contentDescription = "Logo", modifier = Modifier.size(180.dp).padding(bottom = 16.dp))
+        Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(24.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+            Column(modifier = Modifier.padding(20.dp)) {
+                Text("Carga de Nuevo Producto", fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 16.dp))
+                FormField("Código", barcode, enabled = false)
+                FormField("Nombre", nombre) { nombre = it }
+                FormField("Marca", marca) { marca = it }
+                FormField("Precio", precio, keyboardType = KeyboardType.Number) { precio = it }
+                Text("Categoría:", fontWeight = FontWeight.Bold, fontSize = 16.sp, modifier = Modifier.padding(top = 8.dp))
+                ExposedDropdownMenuBox(expanded = expandedCategory, onExpandedChange = { expandedCategory = !expandedCategory }, modifier = Modifier.fillMaxWidth()) {
+                    TextField(value = categoria, onValueChange = {}, readOnly = true, trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedCategory) }, colors = ExposedDropdownMenuDefaults.textFieldColors(focusedContainerColor = Color.Transparent, unfocusedContainerColor = Color.Transparent), modifier = Modifier.menuAnchor().fillMaxWidth())
+                    ExposedDropdownMenu(expanded = expandedCategory, onDismissRequest = { expandedCategory = false }) { categoriesMap.keys.forEach { DropdownMenuItem(text = { Text(it) }, onClick = { categoria = it; subCategoria = ""; expandedCategory = false }) } }
+                }
+                Text("Sub-categoría:", fontWeight = FontWeight.Bold, fontSize = 16.sp, modifier = Modifier.padding(top = 8.dp))
+                ExposedDropdownMenuBox(expanded = expandedSubCategory, onExpandedChange = { if (categoria.isNotEmpty()) expandedSubCategory = !expandedSubCategory }, modifier = Modifier.fillMaxWidth()) {
+                    TextField(value = subCategoria, onValueChange = {}, readOnly = true, enabled = categoria.isNotEmpty(), placeholder = { Text(if (categoria.isEmpty()) "Seleccione categoría primero" else "") }, trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedSubCategory) }, colors = ExposedDropdownMenuDefaults.textFieldColors(focusedContainerColor = Color.Transparent, unfocusedContainerColor = Color.Transparent, disabledContainerColor = Color.Transparent), modifier = Modifier.menuAnchor().fillMaxWidth())
+                    if (categoria.isNotEmpty()) ExposedDropdownMenu(expanded = expandedSubCategory, onDismissRequest = { expandedSubCategory = false }) { categoriesMap[categoria]?.forEach { DropdownMenuItem(text = { Text(it) }, onClick = { subCategoria = it; expandedSubCategory = false }) } }
+                }
+                FormField("Descripción", descripcion, singleLine = false) { descripcion = it }
+                Spacer(modifier = Modifier.height(24.dp))
+                Button(onClick = {
+                    if (nombre.isBlank() || precio.isBlank() || categoria.isBlank() || subCategoria.isBlank()) { Toast.makeText(context, "Campos obligatorios incompletos", Toast.LENGTH_SHORT).show(); return@Button }
+                    isLoading = true
+                    val productData = hashMapOf("codigo" to barcode.trim(), "name" to nombre, "price" to precio.toDoubleOrNull(), "marca" to marca, "categoria" to categoria, "subcategoria" to subCategoria, "descripcion" to descripcion, "scan_count" to 0)
+                    db.collection("products").add(productData).addOnSuccessListener { onProductLoaded() }.addOnFailureListener { onError(); isLoading = false }
+                }, modifier = Modifier.fillMaxWidth().height(55.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00E5FF)), shape = RoundedCornerShape(28.dp), enabled = !isLoading) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("Cargar Producto", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Icon(Icons.Default.Done, contentDescription = null, tint = Color.Black)
+                    }
+                }
+                Spacer(modifier = Modifier.height(16.dp))
+                Button(onClick = onCancel, modifier = Modifier.fillMaxWidth().height(55.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFD32F2F)), shape = RoundedCornerShape(28.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("Cancelar", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Icon(Icons.Default.Close, contentDescription = null, tint = Color.White)
+                    }
+                }
+            }
+        }
+        Spacer(modifier = Modifier.height(24.dp))
+        Button(onClick = onBackToAdminHome, modifier = Modifier.fillMaxWidth(0.6f).height(50.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF69F0AE)), shape = RoundedCornerShape(12.dp)) { Text("Volver al Inicio", color = Color.Black, fontWeight = FontWeight.Bold) }
+    }
+}
+
+@Composable
+fun FormField(label: String, value: String, enabled: Boolean = true, keyboardType: KeyboardType = KeyboardType.Text, singleLine: Boolean = true, onValueChange: (String) -> Unit = {}) {
+    Row(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text("$label: ", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+        TextField(value = value, onValueChange = onValueChange, modifier = Modifier.fillMaxWidth(), enabled = enabled, singleLine = singleLine, keyboardOptions = KeyboardOptions(keyboardType = keyboardType), colors = TextFieldDefaults.colors(focusedContainerColor = Color.Transparent, unfocusedContainerColor = Color.Transparent, disabledContainerColor = Color.Transparent))
+    }
+}
+
+@Composable
+fun RoleSelectionScreen(onAdminClick: () -> Unit, onConsumerClick: () -> Unit) {
+    Column(modifier = Modifier.fillMaxSize().background(Color(0xFF1A0B46)).padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+        Image(painter = painterResource(id = R.drawable.logo_easy_price), contentDescription = "Logo", modifier = Modifier.size(280.dp).padding(bottom = 32.dp), contentScale = ContentScale.Fit)
+        Text(text = "Iniciar como", color = Color.White, fontSize = 22.sp, modifier = Modifier.padding(bottom = 32.dp))
+        RoleButton(text = "Administrador", icon = Icons.Default.Person, onClick = onAdminClick)
+        Spacer(modifier = Modifier.height(20.dp))
+        RoleButton(text = "Consumidor", icon = Icons.Default.ShoppingCart, onClick = onConsumerClick)
+    }
+}
+
+@Composable
+fun AdminLoginScreen(onLoginClick: (String, String) -> Unit, onBack: () -> Unit) {
+    var username by remember { mutableStateOf("") }
+    var password by remember { mutableStateOf("") }
+    var passwordVisible by remember { mutableStateOf(false) }
+
+    Column(modifier = Modifier.fillMaxSize().background(Color(0xFF1A0B46)).padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+        Image(painter = painterResource(id = R.drawable.logo_easy_price), contentDescription = "Logo", modifier = Modifier.size(250.dp).padding(bottom = 32.dp), contentScale = ContentScale.Fit)
+        TextField(value = username, onValueChange = { username = it }, placeholder = { Text("Usuario") }, modifier = Modifier.fillMaxWidth().height(70.dp), shape = RoundedCornerShape(35.dp), colors = TextFieldDefaults.colors(focusedContainerColor = Color.White, unfocusedContainerColor = Color.White), trailingIcon = { Icon(Icons.Default.Person, contentDescription = null) }, singleLine = true)
+        Spacer(modifier = Modifier.height(24.dp))
+        TextField(
+            value = password,
+            onValueChange = { password = it },
+            placeholder = { Text("Contraseña") },
+            modifier = Modifier.fillMaxWidth().height(70.dp),
+            shape = RoundedCornerShape(35.dp),
+            visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+            colors = TextFieldDefaults.colors(focusedContainerColor = Color.White, unfocusedContainerColor = Color.White),
+            trailingIcon = {
+                val icon = if (passwordVisible) Icons.Filled.Visibility else Icons.Filled.VisibilityOff
+                IconButton(onClick = { passwordVisible = !passwordVisible }) {
+                    Icon(imageVector = icon, contentDescription = "Toggle password visibility")
+                }
+            },
+            singleLine = true
+        )
+        Spacer(modifier = Modifier.height(48.dp))
+        Button(onClick = { onLoginClick(username, password) }, modifier = Modifier.width(200.dp).height(60.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2EF2A3)), shape = RoundedCornerShape(30.dp)) { Text(text = "Login", color = Color(0xFF1A0B46), fontSize = 20.sp, fontWeight = FontWeight.Bold) }
+        TextButton(onClick = onBack, modifier = Modifier.padding(top = 16.dp)) { Text("Volver", color = Color.White) }
+    }
+}
+
+@Composable
+fun RoleButton(text: String, icon: ImageVector, onClick: () -> Unit) {
+    Button(onClick = onClick, modifier = Modifier.fillMaxWidth().height(90.dp), shape = RoundedCornerShape(45.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFD54F))) {
+        Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
+            Text(text = text, color = Color(0xFF1A0B46), fontSize = 22.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f), textAlign = TextAlign.Center)
+            Icon(imageVector = icon, contentDescription = null, tint = Color.Gray, modifier = Modifier.size(35.dp))
+        }
+    }
+}
+
+@Composable
+fun MainScreen(onLogout: () -> Unit) {
+    val context = LocalContext.current
+    val barcodeLauncher = rememberLauncherForActivityResult(contract = ActivityResultContracts.StartActivityForResult(), onResult = { result -> if (result.resultCode == Activity.RESULT_OK) { val barcode = result.data?.getStringExtra("barcode_result"); val intent = Intent(context, Result::class.java).apply { putExtra("barcode", barcode) }; context.startActivity(intent) } })
+    Column(modifier = Modifier.fillMaxSize().background(Color(0xFF1A0B46)).padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        Spacer(modifier = Modifier.height(40.dp))
+        Image(painter = painterResource(id = R.drawable.logo_easy_price), contentDescription = "Logo", modifier = Modifier.size(260.dp))
+        Spacer(modifier = Modifier.height(40.dp))
+        Button(onClick = { val intent = Intent(context, ScannerActivity::class.java); barcodeLauncher.launch(intent) }, modifier = Modifier.fillMaxWidth().height(80.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF4C430)), shape = RoundedCornerShape(100.dp)) {
+            Icon(painter = painterResource(id = R.drawable.ic_camera), contentDescription = "Escanear", tint = Color.Black, modifier = Modifier.size(40.dp))
+            Spacer(modifier = Modifier.width(16.dp))
+            Text(text = "Escanear Código", color = Color.Black, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+        }
+        Spacer(modifier = Modifier.weight(1f))
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceAround) {
+            BottomNavButton(text = "Historial", iconRes = R.drawable.ic_list, onClick = { if (HistoryManager.historyList.isNotEmpty()) context.startActivity(Intent(context, HistoryActivity::class.java)) else Toast.makeText(context, "Historial vacío", Toast.LENGTH_SHORT).show() })
+            BottomNavButton(text = "Favoritos", iconRes = R.drawable.ic_star_outline, onClick = { if (FavoritesManager.favorites.isNotEmpty()) context.startActivity(Intent(context, FavoritesActivity::class.java)) else Toast.makeText(context, "Favoritos vacío", Toast.LENGTH_SHORT).show() })
+        }
+        Spacer(modifier = Modifier.height(24.dp))
+        Button(onClick = onLogout, modifier = Modifier.width(140.dp).height(80.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF4C430)), shape = RoundedCornerShape(25.dp)) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Icon(imageVector = Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Salir", tint = Color.Black, modifier = Modifier.size(35.dp))
+                Text(text = "Salir", color = Color.Black, fontWeight = FontWeight.Bold)
+            }
+        }
+        Spacer(modifier = Modifier.height(16.dp))
+    }
+}
+
+@Composable
+fun BottomNavButton(text: String, iconRes: Int, onClick: () -> Unit) {
+    Button(onClick = onClick, modifier = Modifier.width(160.dp).height(80.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF4C430)), shape = RoundedCornerShape(25.dp)) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Icon(painter = painterResource(id = iconRes), contentDescription = text, tint = Color.Black, modifier = Modifier.size(30.dp))
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(text = text, color = Color.Black, fontWeight = FontWeight.Bold)
+        }
     }
 }
