@@ -234,7 +234,6 @@ class ReportesViewModel : ViewModel() {
     data class ReportProduct(val name: String, val count: Int)
 
     fun generarNuevoReporte(context: Context) {
-        // Necesitamos el contexto de la actividad para las vistas
         val activityContext = context
         isGenerating = true
         
@@ -242,16 +241,13 @@ class ReportesViewModel : ViewModel() {
             try {
                 val db = FirebaseFirestore.getInstance()
                 
-                // 1. Estadísticas globales
                 val statsDoc = db.collection("stats").document("global").get().await()
                 val totalScans = if (statsDoc.exists()) statsDoc.getLong("total_scans") ?: 0 else 0
                 val activeUsers = if (statsDoc.exists()) statsDoc.getLong("active_users") ?: 0 else 0
                 
-                // 2. Conteo de productos
                 val productSnapshot = db.collection("products").count().get(AggregateSource.SERVER).await()
                 val totalProductsCount = productSnapshot.count
 
-                // 3. Top productos (Orden manual en memoria para evitar errores de precondición/índices)
                 val productStatsSnap = db.collection("product_stats").get().await()
                 val topProducts = productStatsSnap.documents
                     .map { doc ->
@@ -263,7 +259,6 @@ class ReportesViewModel : ViewModel() {
                     .sortedByDescending { it.count }
                     .take(5)
 
-                // 4. Escaneos semanales (Orden manual en memoria)
                 val scansByDaySnap = db.collection("scans_by_day").get().await()
                 val weeklyScans = scansByDaySnap.documents
                     .sortedByDescending { it.id }
@@ -271,13 +266,10 @@ class ReportesViewModel : ViewModel() {
                     .map { it.getLong("count")?.toInt() ?: 0 }
                     .reversed()
 
-                // 5. Generar PDF
-                // El dibujo del gráfico DEBE ser en el hilo principal
                 val chartBitmap = withContext(Dispatchers.Main) {
                     createChartBitmap(activityContext, weeklyScans)
                 }
 
-                // Generación de PDF y escritura en disco
                 withContext(Dispatchers.Default) {
                     crearPdfReal(activityContext, totalScans, activeUsers, totalProductsCount, topProducts, chartBitmap)
                 }
@@ -295,7 +287,6 @@ class ReportesViewModel : ViewModel() {
 
     private fun createChartBitmap(context: Context, data: List<Int>): Bitmap {
         val chart = LineChart(context)
-        // MPAndroidChart necesita dimensiones explícitas
         chart.measure(View.MeasureSpec.makeMeasureSpec(600, View.MeasureSpec.EXACTLY), 
                      View.MeasureSpec.makeMeasureSpec(300, View.MeasureSpec.EXACTLY))
         chart.layout(0, 0, 600, 300)
@@ -512,7 +503,10 @@ class MainActivity : ComponentActivity() {
                     "management_products" -> ProductosScreen(
                         onBack = { currentScreen = "management_home" },
                         onProductClick = { barcode ->
-                            val intent = Intent(context, Result::class.java).apply { putExtra("barcode", barcode) }
+                            val intent = Intent(context, Result::class.java).apply { 
+                                putExtra("barcode", barcode) 
+                                putExtra("is_consumer", true) 
+                            }
                             context.startActivity(intent)
                         }
                     )
@@ -1189,7 +1183,7 @@ fun RoleButton(text: String, icon: ImageVector, onClick: () -> Unit) {
 @Composable
 fun MainScreen(onLogout: () -> Unit) {
     val context = LocalContext.current
-    val barcodeLauncher = rememberLauncherForActivityResult(contract = ActivityResultContracts.StartActivityForResult(), onResult = { result -> if (result.resultCode == Activity.RESULT_OK) { val barcode = result.data?.getStringExtra("barcode_result"); val intent = Intent(context, Result::class.java).apply { putExtra("barcode", barcode) }; context.startActivity(intent) } })
+    val barcodeLauncher = rememberLauncherForActivityResult(contract = ActivityResultContracts.StartActivityForResult(), onResult = { result -> if (result.resultCode == Activity.RESULT_OK) { val barcode = result.data?.getStringExtra("barcode_result"); val intent = Intent(context, Result::class.java).apply { putExtra("barcode", barcode); putExtra("is_consumer", true) }; context.startActivity(intent) } })
     Column(modifier = Modifier.fillMaxSize().background(Color(0xFF1A0B46)).padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         Spacer(modifier = Modifier.height(40.dp))
         Image(painter = painterResource(id = R.drawable.logo_easy_price), contentDescription = "Logo", modifier = Modifier.size(260.dp))
