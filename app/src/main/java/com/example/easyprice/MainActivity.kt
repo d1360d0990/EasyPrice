@@ -9,6 +9,7 @@ import android.graphics.Paint
 import android.graphics.pdf.PdfDocument
 import android.os.Bundle
 import android.util.Log
+import android.view.View
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -29,27 +30,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Assessment
-import androidx.compose.material.icons.filled.Chat
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Dashboard
-import androidx.compose.material.icons.filled.Done
-import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.Face
-import androidx.compose.material.icons.filled.Inventory
-import androidx.compose.material.icons.filled.List
-import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.QrCodeScanner
-import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Send
-import androidx.compose.material.icons.filled.Share
-import androidx.compose.material.icons.filled.ShoppingCart
-import androidx.compose.material.icons.filled.ShowChart
-import androidx.compose.material.icons.filled.Visibility
-import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -72,6 +53,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.FileProvider
 import androidx.core.os.bundleOf
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.easyprice.data.FavoritesManager
 import com.example.easyprice.data.HistoryManager
@@ -87,7 +69,12 @@ import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
 import com.google.firebase.firestore.SetOptions
+import com.google.firebase.firestore.FieldPath
 import com.google.firebase.ktx.Firebase
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.tasks.await
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
 import java.text.SimpleDateFormat
@@ -99,7 +86,6 @@ class DashboardViewModel : ViewModel() {
     var activeUsers by mutableIntStateOf(0)
     var totalProducts by mutableIntStateOf(0)
     var isLoading by mutableStateOf(false)
-
     var topProducts by mutableStateOf<List<String>>(emptyList())
 
     fun loadStats(context: Context) {
@@ -125,13 +111,9 @@ class DashboardViewModel : ViewModel() {
                                 topProducts = topSnapshot.documents.map { it.getString("name") ?: "Sin nombre" }
                                 isLoading = false
                             }
-                            .addOnFailureListener {
-                                isLoading = false
-                            }
+                            .addOnFailureListener { isLoading = false }
                     }
-                    .addOnFailureListener {
-                        isLoading = false
-                    }
+                    .addOnFailureListener { isLoading = false }
             }
             .addOnFailureListener {
                 isLoading = false
@@ -166,9 +148,7 @@ class ProductosViewModel : ViewModel() {
                 }
                 isLoading = false
             }
-            .addOnFailureListener {
-                isLoading = false
-            }
+            .addOnFailureListener { isLoading = false }
     }
 }
 
@@ -192,10 +172,7 @@ class EscaneosViewModel : ViewModel() {
             .get()
             .addOnSuccessListener { result ->
                 topProductos = result.map {
-                    Pair(
-                        it.getString("name") ?: "",
-                        it.getLong("scan_count")?.toInt() ?: 0
-                    )
+                    Pair(it.getString("name") ?: "", it.getLong("scan_count")?.toInt() ?: 0)
                 }
                 isLoading = false
             }
@@ -203,7 +180,6 @@ class EscaneosViewModel : ViewModel() {
     }
 
     private fun loadWeeklyData() {
-        // Simulación (después podés usar colección "scans_by_day")
         weeklyData = listOf(10, 25, 40, 30, 50, 60, 45)
     }
 }
@@ -223,13 +199,13 @@ class TendenciasViewModel : ViewModel() {
     private fun loadWeeklyData() {
         FirebaseFirestore.getInstance()
             .collection("scans_by_day")
-            .orderBy("__name__", Query.Direction.ASCENDING)
-            .limitToLast(7)
             .get()
             .addOnSuccessListener { result ->
-                weeklyData = result.map {
-                    it.getLong("count")?.toInt() ?: 0
-                }
+                weeklyData = result.documents
+                    .sortedByDescending { it.id }
+                    .take(7)
+                    .map { it.getLong("count")?.toInt() ?: 0 }
+                    .reversed()
                 isLoading = false
             }
             .addOnFailureListener { isLoading = false }
@@ -244,11 +220,8 @@ class TendenciasViewModel : ViewModel() {
                     val name = it.getString("name") ?: ""
                     val current = it.getLong("scan_count")?.toInt() ?: 0
                     val last = it.getLong("last_week_count")?.toInt() ?: 0
-
                     Triple(name, current, last)
-                }.sortedByDescending {
-                    it.second - it.third
-                }.take(5)
+                }.sortedByDescending { it.second - it.third }.take(5)
             }
     }
 }
@@ -261,63 +234,80 @@ class ReportesViewModel : ViewModel() {
     data class ReportProduct(val name: String, val count: Int)
 
     fun generarNuevoReporte(context: Context) {
+        // Necesitamos el contexto de la actividad para las vistas
+        val activityContext = context
         isGenerating = true
-        val db = FirebaseFirestore.getInstance()
         
-        db.collection("stats").document("global").get().addOnSuccessListener { statsDoc ->
-            val totalScans = statsDoc.getLong("total_scans") ?: 0
-            val activeUsers = statsDoc.getLong("active_users") ?: 0
-            
-            db.collection("products").count().get(AggregateSource.SERVER).addOnSuccessListener { productSnapshot ->
+        viewModelScope.launch {
+            try {
+                val db = FirebaseFirestore.getInstance()
+                
+                // 1. Estadísticas globales
+                val statsDoc = db.collection("stats").document("global").get().await()
+                val totalScans = if (statsDoc.exists()) statsDoc.getLong("total_scans") ?: 0 else 0
+                val activeUsers = if (statsDoc.exists()) statsDoc.getLong("active_users") ?: 0 else 0
+                
+                // 2. Conteo de productos
+                val productSnapshot = db.collection("products").count().get(AggregateSource.SERVER).await()
                 val totalProductsCount = productSnapshot.count
 
-                db.collection("product_stats")
-                    .orderBy("scan_count", Query.Direction.DESCENDING)
-                    .limit(5)
-                    .get()
-                    .addOnSuccessListener { topSnap ->
-                        val topProducts = topSnap.documents.map { 
-                            ReportProduct(
-                                name = it.getString("name") ?: "Sin nombre",
-                                count = it.getLong("scan_count")?.toInt() ?: 0
-                            )
-                        }
+                // 3. Top productos (Orden manual en memoria para evitar errores de precondición/índices)
+                val productStatsSnap = db.collection("product_stats").get().await()
+                val topProducts = productStatsSnap.documents
+                    .map { doc ->
+                        ReportProduct(
+                            name = doc.getString("name") ?: "Sin nombre",
+                            count = doc.getLong("scan_count")?.toInt() ?: 0
+                        )
+                    }
+                    .sortedByDescending { it.count }
+                    .take(5)
 
-                        db.collection("scans_by_day")
-                            .orderBy("__name__", Query.Direction.ASCENDING)
-                            .limitToLast(7)
-                            .get()
-                            .addOnSuccessListener { scansSnap ->
-                                val weeklyScans = scansSnap.documents.map { it.getLong("count")?.toInt() ?: 0 }
-                                val chartBitmap = createChartBitmap(context, weeklyScans)
-                                crearPdfReal(context, totalScans, activeUsers, totalProductsCount, topProducts, chartBitmap)
-                            }
-                            .addOnFailureListener {
-                                isGenerating = false
-                                Toast.makeText(context, "Error al obtener datos históricos", Toast.LENGTH_SHORT).show()
-                            }
-                    }
-                    .addOnFailureListener {
-                        isGenerating = false
-                        Toast.makeText(context, "Error al obtener top productos", Toast.LENGTH_SHORT).show()
-                    }
+                // 4. Escaneos semanales (Orden manual en memoria)
+                val scansByDaySnap = db.collection("scans_by_day").get().await()
+                val weeklyScans = scansByDaySnap.documents
+                    .sortedByDescending { it.id }
+                    .take(7)
+                    .map { it.getLong("count")?.toInt() ?: 0 }
+                    .reversed()
+
+                // 5. Generar PDF
+                // El dibujo del gráfico DEBE ser en el hilo principal
+                val chartBitmap = withContext(Dispatchers.Main) {
+                    createChartBitmap(activityContext, weeklyScans)
+                }
+
+                // Generación de PDF y escritura en disco
+                withContext(Dispatchers.Default) {
+                    crearPdfReal(activityContext, totalScans, activeUsers, totalProductsCount, topProducts, chartBitmap)
+                }
+
+            } catch (e: Exception) {
+                Log.e("Reportes", "Error al generar reporte", e)
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(activityContext, "Error: ${e.localizedMessage}", Toast.LENGTH_LONG).show()
+                }
+            } finally {
+                withContext(Dispatchers.Main) { isGenerating = false }
             }
-            .addOnFailureListener {
-                isGenerating = false
-                Toast.makeText(context, "Error al contar productos", Toast.LENGTH_SHORT).show()
-            }
-        }.addOnFailureListener {
-            isGenerating = false
-            Toast.makeText(context, "Error al obtener estadísticas globales", Toast.LENGTH_SHORT).show()
         }
     }
 
     private fun createChartBitmap(context: Context, data: List<Int>): Bitmap {
         val chart = LineChart(context)
+        // MPAndroidChart necesita dimensiones explícitas
+        chart.measure(View.MeasureSpec.makeMeasureSpec(600, View.MeasureSpec.EXACTLY), 
+                     View.MeasureSpec.makeMeasureSpec(300, View.MeasureSpec.EXACTLY))
         chart.layout(0, 0, 600, 300)
         
-        val entries = data.mapIndexed { index, value ->
-            Entry(index.toFloat(), value.toFloat())
+        val entries = data.mapIndexed { index, value -> Entry(index.toFloat(), value.toFloat()) }
+        
+        if (entries.isEmpty()) {
+            return Bitmap.createBitmap(600, 300, Bitmap.Config.ARGB_8888).apply {
+                val canvas = Canvas(this)
+                val paint = Paint().apply { color = android.graphics.Color.GRAY; textSize = 20f }
+                canvas.drawText("No hay datos para el gráfico", 150f, 150f, paint)
+            }
         }
 
         val dataSet = LineDataSet(entries, "Escaneos").apply {
@@ -340,7 +330,7 @@ class ReportesViewModel : ViewModel() {
         return bitmap
     }
 
-    private fun crearPdfReal(context: Context, scans: Long, users: Long, products: Long, topProductos: List<ReportProduct>, chartBitmap: Bitmap) {
+    private suspend fun crearPdfReal(context: Context, scans: Long, users: Long, products: Long, topProductos: List<ReportProduct>, chartBitmap: Bitmap) {
         val pdfDocument = PdfDocument()
         val pageInfo = PdfDocument.PageInfo.Builder(595, 842, 1).create()
         val page = pdfDocument.startPage(pageInfo)
@@ -379,15 +369,20 @@ class ReportesViewModel : ViewModel() {
         val file = File(context.getExternalFilesDir(null), fileName)
 
         try {
-            pdfDocument.writeTo(FileOutputStream(file))
-            if (!reportsList.contains(fileName)) reportsList.add(0, fileName)
-            Toast.makeText(context, "Reporte guardado: $fileName", Toast.LENGTH_SHORT).show()
+            withContext(Dispatchers.IO) {
+                pdfDocument.writeTo(FileOutputStream(file))
+            }
+            withContext(Dispatchers.Main) {
+                if (!reportsList.contains(fileName)) reportsList.add(0, fileName)
+                Toast.makeText(context, "Reporte guardado: $fileName", Toast.LENGTH_SHORT).show()
+            }
         } catch (e: Exception) {
             Log.e("PDF", "Error al guardar: ${e.message}")
-            Toast.makeText(context, "Error al generar PDF", Toast.LENGTH_SHORT).show()
+            withContext(Dispatchers.Main) {
+                Toast.makeText(context, "Error al generar PDF", Toast.LENGTH_SHORT).show()
+            }
         } finally {
             pdfDocument.close()
-            isGenerating = false
         }
     }
 
@@ -437,34 +432,20 @@ class AsistenteIAViewModel : ViewModel() {
     fun sendMessage(query: String) {
         messages.add(query to true)
         isTyping = true
-        
         val db = FirebaseFirestore.getInstance()
         
         if (query.lowercase().contains("top") || query.lowercase().contains("mas escaneados")) {
             db.collection("product_stats")
                 .orderBy("scan_count", Query.Direction.DESCENDING)
-                .limit(5)
-                .get()
-                .addOnSuccessListener { snapshot ->
+                .limit(5).get().addOnSuccessListener { snapshot ->
                     val dataForAI = snapshot.documents.mapIndexed { index, doc ->
                         "${index + 1}. ${doc.getString("name")} - ${doc.getLong("scan_count")}"
                     }.joinToString("\n")
-                    
                     val topName = snapshot.documents.firstOrNull()?.getString("name") ?: "N/A"
-                    simulateIAResponse("Análisis Estratégico:\n\nEl producto '$topName' lidera la demanda. Aquí el detalle:\n$dataForAI\n\nSe observa una tendencia clara hacia esta categoría.")
-                }
-        } else if (query.lowercase().contains("crecimiento") || query.lowercase().contains("tendencia")) {
-            db.collection("product_stats")
-                .get()
-                .addOnSuccessListener { snapshot ->
-                    val trend = snapshot.documents
-                        .mapNotNull { it.getString("name") }
-                        .take(2)
-                        .joinToString { it }
-                    simulateIAResponse("He analizado las tendencias y $trend muestran un crecimiento constante esta semana.")
+                    simulateIAResponse("Análisis Estratégico:\n\nEl producto '$topName' lidera la demanda. Aquí el detalle:\n$dataForAI")
                 }
         } else {
-            simulateIAResponse("Interesante pregunta. Puedo ayudarte con estadísticas de productos, tendencias de escaneo o información de inventario. ¿Qué prefieres consultar?")
+            simulateIAResponse("Interesante pregunta. Puedo ayudarte con estadísticas, tendencias o información de inventario.")
         }
     }
 
@@ -479,14 +460,12 @@ class AsistenteIAViewModel : ViewModel() {
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        
         val targetScreen = intent.getStringExtra("target_screen") ?: "role_selection"
         
         setContent {
             EasyPriceTheme {
                 var currentScreen by rememberSaveable { mutableStateOf(targetScreen) }
                 var scannedBarcode by rememberSaveable { mutableStateOf("") }
-
                 val context = LocalContext.current
                 val barcodeLauncher = rememberLauncherForActivityResult(
                     contract = ActivityResultContracts.StartActivityForResult(),
@@ -494,18 +473,9 @@ class MainActivity : ComponentActivity() {
                         if (result.resultCode == Activity.RESULT_OK) {
                             val barcode = result.data?.getStringExtra("barcode_result")?.trim() ?: ""
                             scannedBarcode = barcode
-                            
-                            val db = FirebaseFirestore.getInstance()
-                            db.collection("products").whereEqualTo("codigo", barcode).get()
+                            FirebaseFirestore.getInstance().collection("products").whereEqualTo("codigo", barcode).get()
                                 .addOnSuccessListener { documents ->
-                                    if (documents.isEmpty) {
-                                        currentScreen = "admin_add_product"
-                                    } else {
-                                        currentScreen = "admin_product_exists"
-                                    }
-                                }
-                                .addOnFailureListener {
-                                    Toast.makeText(context, "Error al conectar con la base de datos", Toast.LENGTH_SHORT).show()
+                                    currentScreen = if (documents.isEmpty) "admin_add_product" else "admin_product_exists"
                                 }
                         }
                     }
@@ -514,10 +484,7 @@ class MainActivity : ComponentActivity() {
                 when (currentScreen) {
                     "role_selection" -> RoleSelectionScreen(
                         onAdminClick = { currentScreen = "admin_login" },
-                        onConsumerClick = { 
-                            trackUserActivity()
-                            currentScreen = "consumer_home" 
-                        }
+                        onConsumerClick = { trackUserActivity(); currentScreen = "consumer_home" }
                     )
                     "admin_login" -> AdminLoginScreen(
                         onLoginClick = { user, pass ->
@@ -528,10 +495,7 @@ class MainActivity : ComponentActivity() {
                         onBack = { currentScreen = "role_selection" }
                     )
                     "admin_home" -> AdminHomeScreen(
-                        onAdminScan = {
-                            val intent = Intent(context, ScannerActivity::class.java)
-                            barcodeLauncher.launch(intent)
-                        },
+                        onAdminScan = { barcodeLauncher.launch(Intent(context, ScannerActivity::class.java)) },
                         onDatabaseClick = { currentScreen = "admin_database" },
                         onLogout = { currentScreen = "role_selection" }
                     )
@@ -548,7 +512,6 @@ class MainActivity : ComponentActivity() {
                     "management_products" -> ProductosScreen(
                         onBack = { currentScreen = "management_home" },
                         onProductClick = { barcode ->
-                            scannedBarcode = barcode
                             val intent = Intent(context, Result::class.java).apply { putExtra("barcode", barcode) }
                             context.startActivity(intent)
                         }
@@ -559,7 +522,6 @@ class MainActivity : ComponentActivity() {
                     "reports" -> ReportesScreen(onBack = { currentScreen = "management_home" })
                     "admin_database" -> DatabaseScreen(
                         onProductClick = { barcode ->
-                            scannedBarcode = barcode
                             val intent = Intent(context, Result::class.java).apply {
                                 putExtra("barcode", barcode)
                                 putExtra("edit_mode", true)
@@ -570,7 +532,6 @@ class MainActivity : ComponentActivity() {
                     )
                     "admin_product_exists" -> ProductExistsScreen(
                         onViewProduct = {
-                            currentScreen = "admin_home"
                             val intent = Intent(context, Result::class.java).apply { putExtra("barcode", scannedBarcode) }
                             context.startActivity(intent)
                         },
@@ -584,10 +545,7 @@ class MainActivity : ComponentActivity() {
                         onBackToAdminHome = { currentScreen = "admin_home" }
                     )
                     "admin_success" -> SuccessScreen(
-                        onCargarOtro = {
-                            val intent = Intent(context, ScannerActivity::class.java)
-                            barcodeLauncher.launch(intent)
-                        },
+                        onCargarOtro = { barcodeLauncher.launch(Intent(context, ScannerActivity::class.java)) },
                         onBackToAdminHome = { currentScreen = "admin_home" }
                     )
                     "admin_error" -> ErrorScreen(
@@ -619,7 +577,7 @@ fun ReportesScreen(viewModel: ReportesViewModel = viewModel(), onBack: () -> Uni
             modifier = Modifier.fillMaxWidth(),
             colors = CardDefaults.cardColors(containerColor = Color(0xFF2EF2A3)),
             shape = RoundedCornerShape(16.dp),
-            onClick = { viewModel.generarNuevoReporte(context) }
+            onClick = { if (!viewModel.isGenerating) viewModel.generarNuevoReporte(context) }
         ) {
             Row(modifier = Modifier.padding(24.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
                 if (viewModel.isGenerating) {
@@ -695,10 +653,7 @@ fun ChatBubble(text: String, isUser: Boolean) {
 @Composable
 fun DashboardScreen(viewModel: DashboardViewModel = viewModel(), onBack: () -> Unit) {
     val context = LocalContext.current
-    LaunchedEffect(Unit) {
-        Firebase.analytics.logEvent("view_dashboard", bundleOf("user_type" to "gerencia", "timestamp" to System.currentTimeMillis()))
-        viewModel.loadStats(context)
-    }
+    LaunchedEffect(Unit) { viewModel.loadStats(context) }
     Column(modifier = Modifier.fillMaxSize().background(Color(0xFF1A0B46)).padding(16.dp).verticalScroll(rememberScrollState())) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White) }
@@ -734,13 +689,7 @@ fun DashboardScreen(viewModel: DashboardViewModel = viewModel(), onBack: () -> U
             }
         }
         Spacer(modifier = Modifier.height(40.dp))
-        Button(onClick = onBack, modifier = Modifier.fillMaxWidth().height(60.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFD54F)), shape = RoundedCornerShape(30.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null, tint = Color(0xFF1A0B46))
-                Spacer(modifier = Modifier.width(12.dp))
-                Text("Salir", color = Color(0xFF1A0B46), fontSize = 18.sp, fontWeight = FontWeight.Bold)
-            }
-        }
+        Button(onClick = onBack, modifier = Modifier.fillMaxWidth().height(60.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFD54F)), shape = RoundedCornerShape(30.dp)) { Text("Salir", color = Color(0xFF1A0B46), fontSize = 18.sp, fontWeight = FontWeight.Bold) }
         Spacer(modifier = Modifier.height(24.dp))
     }
 }
@@ -748,11 +697,7 @@ fun DashboardScreen(viewModel: DashboardViewModel = viewModel(), onBack: () -> U
 @Composable
 fun ProductosScreen(viewModel: ProductosViewModel = viewModel(), onBack: () -> Unit, onProductClick: (String) -> Unit) {
     var searchText by remember { mutableStateOf("") }
-    val analytics = Firebase.analytics
-    LaunchedEffect(Unit) {
-        analytics.logEvent("view_product_list", null)
-        viewModel.loadProductos()
-    }
+    LaunchedEffect(Unit) { viewModel.loadProductos() }
     Column(modifier = Modifier.fillMaxSize().background(Color(0xFF1A0B46)).padding(16.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White) }
@@ -760,16 +705,16 @@ fun ProductosScreen(viewModel: ProductosViewModel = viewModel(), onBack: () -> U
         }
         Spacer(modifier = Modifier.height(16.dp))
         OutlinedTextField(
-            value = searchText, onValueChange = { searchText = it; analytics.logEvent("search_product", bundleOf("search_term" to it)) },
+            value = searchText, onValueChange = { searchText = it },
             label = { Text("Buscar producto") }, modifier = Modifier.fillMaxWidth(),
-            colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Color.White, unfocusedTextColor = Color.White, focusedBorderColor = Color(0xFF2EF2A3), unfocusedBorderColor = Color.Gray, focusedLabelColor = Color(0xFF2EF2A3), unfocusedLabelColor = Color.Gray),
+            colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Color.White, unfocusedTextColor = Color.White, focusedBorderColor = Color(0xFF2EF2A3), unfocusedBorderColor = Color.Gray),
             shape = RoundedCornerShape(12.dp)
         )
         Spacer(modifier = Modifier.height(16.dp))
         if (viewModel.isLoading) Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = Color(0xFF2EF2A3)) }
         else LazyColumn(modifier = Modifier.fillMaxSize()) {
-            items(viewModel.productos.filter { it.name.contains(searchText, ignoreCase = true) || it.marca?.contains(searchText, ignoreCase = true) == true }) { product ->
-                ProductItem(product) { analytics.logEvent("view_product_from_list", bundleOf("product_name" to product.name)); onProductClick(product.code) }
+            items(viewModel.productos.filter { it.name.contains(searchText, ignoreCase = true) }) { product ->
+                ProductItem(product) { onProductClick(product.code) }
             }
         }
     }
@@ -818,7 +763,6 @@ fun RealLineChart(data: List<Int>) {
                     circleRadius = 5f
                     setDrawCircleHole(false)
                     valueTextColor = android.graphics.Color.WHITE
-                    valueTextSize = 10f
                     setDrawFilled(true)
                     fillColor = android.graphics.Color.parseColor("#2EF2A3")
                     fillAlpha = 50
