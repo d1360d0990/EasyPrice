@@ -85,6 +85,8 @@ class Result : ComponentActivity() {
                                         HistoryManager.historyList.add(newProduct)
                                     }
 
+                                    // ✅ Solo incrementamos total_scans aquí. 
+                                    // El incremento de active_users solo ocurre en MainActivity.kt al entrar como consumidor.
                                     db.collection("stats").document("global")
                                         .set(mapOf("total_scans" to FieldValue.increment(1)), SetOptions.merge())
 
@@ -340,14 +342,11 @@ fun EditProductScreen(
                             onDismissRequest = { expandedCategory = false }
                         ) {
                             categoriesMap.keys.forEach { selectionOption ->
-                                DropdownMenuItem(
-                                    text = { Text(selectionOption) },
-                                    onClick = {
-                                        categoria = selectionOption
-                                        subcategoria = "" 
-                                        expandedCategory = false
-                                    }
-                                )
+                                MirrorSelectionOption(selectionOption) {
+                                    categoria = selectionOption
+                                    subcategoria = "" 
+                                    expandedCategory = false
+                                }
                             }
                         }
                     }
@@ -443,4 +442,12 @@ fun EditProductScreen(
             }
         }
     }
+}
+
+@Composable
+fun MirrorSelectionOption(option: String, onClick: () -> Unit) {
+    DropdownMenuItem(
+        text = { Text(option) },
+        onClick = onClick
+    )
 }
